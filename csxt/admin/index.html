@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperZXY 后台</title>
+<link rel="stylesheet" href="/superzxy/admin.css?v=__ADMIN_ASSET_VERSION__">
+</head>
+<body>
+<div class="shell">
+  <div class="top"><div><div class="eyebrow">SuperZXY Command Center</div><div class="brand">后台控制中心</div><div class="muted">实时监控、参数库、反馈与代码升级控制台</div></div><button class="btn secondary" id="logoutBtn" hidden>退出登录</button></div>
+  <section class="card login" id="loginCard">
+    <h2>管理员登录</h2>
+    <div class="field"><label>后台密码</label><input id="password" type="password" autocomplete="current-password" placeholder="请输入后台密码"></div>
+    <button class="btn" id="loginBtn">登录</button>
+    <div class="status" id="loginStatus"></div>
+  </section>
+  <main id="adminMain" hidden>
+    <section class="metric-grid" aria-label="系统数据总览">
+      <div class="metric-card"><div class="metric-label">Active Users</div><div class="metric-value" id="usageActive">0</div><div class="metric-sub">当前正在使用人数</div></div>
+      <div class="metric-card"><div class="metric-label">Total Uses</div><div class="metric-value" id="usageTotal">0</div><div class="metric-sub">累计使用次数</div></div>
+      <div class="metric-card"><div class="metric-label">Feedback</div><div class="metric-value" id="feedbackMetric">0</div><div class="metric-sub">反馈总量</div></div>
+      <div class="metric-card"><div class="metric-label">Catalog</div><div class="metric-value" id="databaseMetric">-</div><div class="metric-sub" id="databaseMetricSub">参数库规模</div></div>
+    </section>
+    <div class="grid">
+      <section class="card"><h3>参数库</h3><p class="muted">上传 Excel 后会先编译校验，成功才替换正式库。</p><input id="dbFile" type="file" accept=".xlsx,.xlsm,.xls"><div class="actions"><button class="btn" id="uploadDbBtn">上传并应用</button><button class="btn secondary" id="refreshStatusBtn">刷新状态</button></div><div class="status" id="dbStatus"></div></section>
+      <section class="card"><h3>代码升级</h3><p class="muted">上传升级包后会先预检；应用前会启动影子服务，健康检查通过后才切换正式代码。</p><input id="zipFile" type="file" accept=".zip"><div class="actions"><button class="btn" id="uploadZipBtn">上传并预检</button><button class="btn danger" id="applyUpgradeBtn" disabled>影子验证并应用</button></div><div class="status" id="upgradeStatus"></div><div class="status" id="upgradeReport"></div></section>
+      <section class="card"><h3>系统</h3><p class="muted">守护模式或 PM2 环境下支持后台触发重启；普通 node 直接启动请手动重启窗口。</p><div class="actions"><button class="btn secondary" id="reloadBtn">刷新后台</button><button class="btn danger" id="restartBtn">重启服务</button></div><div class="status" id="systemStatus"></div></section>
+      <section class="card"><h3>工具通知栏</h3><p class="muted">编辑前台欢迎界面的通知内容；关闭或留空时前台不显示。</p><label class="switch-row"><input id="noticeEnabled" type="checkbox"> 启用通知</label><div class="field"><label>通知标题</label><input id="noticeTitle" maxlength="40" placeholder="通知"></div><div class="field"><label>通知内容</label><textarea id="noticeMessage" maxlength="300" placeholder="请输入要展示给前台用户的通知"></textarea></div><div class="actions"><button class="btn secondary" id="previewNoticeBtn">预览</button><button class="btn" id="saveNoticeBtn">保存通知</button></div><div class="status" id="noticeStatus"></div><div class="notice-preview" id="noticePreview" hidden></div></section>
+      <section class="card span"><h3>反馈列表 <span class="pill" id="feedbackTotal">0 条</span></h3><div class="actions"><button class="btn secondary" id="refreshFeedbackBtn">刷新反馈</button><a class="btn secondary" href="/api/admin/feedback/export.csv" target="_blank" style="display:inline-flex;align-items:center;text-decoration:none">导出 CSV</a></div><div style="overflow:auto;margin-top:10px"><table><thead><tr><th>时间</th><th>工号</th><th>建议</th><th>来源</th></tr></thead><tbody id="feedbackRows"></tbody></table></div></section>
+      <section class="card"><h3>数据库备份</h3><div class="list" id="dbBackups"></div></section>
+      <section class="card span"><h3>代码备份 / 回滚</h3><div class="status" id="lastUpgradeStatus"></div><div class="list" id="codeBackups"></div></section>
+    </div>
+  </main>
+</div>
+<script src="/superzxy/admin.js?v=__ADMIN_ASSET_VERSION__"></script>
+</body>
+</html>

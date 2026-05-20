@@ -1,0 +1,11 @@
+# Neural Procurement
+
+Neural Procurement treats information as a luminous system: documents, rules, parameters, and human judgment become currents moving through a precise machine. Space is deep and layered, with a strong sense of foreground and background; the viewer should feel they are looking into an operational intelligence chamber rather than a flat page. Every line, dot, and pane must look meticulously crafted, as if placed after countless refinements by someone at the top of their field.
+
+Form is built from scanning tracks, dense micro-grids, translucent panels, and precise marker systems. The composition should never feel decorative for its own sake; each visual element implies detection, extraction, matching, or routing. Scale shifts create drama: huge declarative typography anchors the system, while tiny clinical labels and reference numbers suggest master-level execution and painstaking attention to hidden data structures.
+
+Color behaves like status intelligence. Cyan signals recognition and trust, amber signals decision pressure, green signals verified output, and coral marks risk or manual intervention. These accents appear against deep carbon and blue-black surfaces, but the palette must not become one-note; it should feel calibrated, controlled, and materially rich. The final work should look labored over with care, with every glow restrained and every contrast checked.
+
+Rhythm is sequential but not linear. The eye should travel like a workflow: upload, parse, map, edit, rewrite, deliver. Repeated shapes and aligned motion paths create the sense of automation, while carefully interrupted zones create room for customization and human control. Typography is sparse and functional, integrated into the visual machinery as labels, commands, and proof points rather than paragraphs.
+
+Hierarchy comes from clarity under complexity. The piece may be dense, but it must remain navigable: one dominant promise, several unmistakable advantages, and supporting evidence revealed through spatial depth. Craftsmanship is central again here: the whole interface should feel like the product of deep expertise, not a theme pasted on top. It must be sharp, cinematic, precise, and confident enough to make the product feel inevitable.

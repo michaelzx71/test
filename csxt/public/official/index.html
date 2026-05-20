@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 参数系统官网 | 报价单自动识别与参数交付工作流</title>
+  <meta name="description" content="AI 参数系统依托 FastGPT 工作流，自动识别报价单、匹配参数、支持高度定制编辑、AI 改写和 AI 整理格式。">
+  <link rel="stylesheet" href="/official/site.css">
+</head>
+<body>
+  <header class="site-nav" aria-label="官网导航">
+    <a class="brand" href="#top" aria-label="AI 参数系统官网">
+      <span class="brand-mark">AI</span>
+      <span>AI 参数系统</span>
+    </a>
+    <nav class="nav-links" aria-label="页面章节">
+      <a href="#workflow">流程</a>
+      <a href="#advantages">优势</a>
+      <a href="#fastgpt">FastGPT</a>
+      <a href="#delivery">交付</a>
+    </nav>
+    <a class="nav-cta" href="/">进入系统</a>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="heroTitle">
+      <canvas id="heroCanvas" aria-hidden="true"></canvas>
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <p class="eyebrow">Quote Intelligence / Parameter Automation</p>
+        <h1 id="heroTitle">
+          <span>报价单到投标参数</span>
+          <span>一条智能链路完成。</span>
+        </h1>
+        <p class="hero-lead">
+          自动识别报价单、自动匹配参数、手动可控编辑、AI 改写与格式整理，
+          依托 FastGPT 工作流把繁琐控标交付变成可复用的智能流程。
+        </p>
+        <div class="hero-actions">
+          <a class="primary-action" href="/">打开工具</a>
+          <a class="secondary-action" href="#advantages">查看优势</a>
+        </div>
+      </div>
+      <div class="hero-instrument" aria-label="核心能力概览">
+        <div class="scan-card scan-card-main">
+          <span class="scan-kicker">Current Flow</span>
+          <strong>报价单解析</strong>
+          <small>产品识别 / 配置拆解 / 参数匹配</small>
+        </div>
+        <div class="radar">
+          <span></span>
+          <b>FastGPT</b>
+        </div>
+        <div class="metric-strip">
+          <span><b>5</b> 个核心环节</span>
+          <span><b>0</b> 构建依赖</span>
+          <span><b>1</b> 套本地交付</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-band" aria-label="核心卖点">
+      <div>
+        <span>01</span>
+        <strong>报价单自动识别</strong>
+        <p>从上传文件中提取产品、模块和配置信息，减少人工读表。</p>
+      </div>
+      <div>
+        <span>02</span>
+        <strong>参数自动匹配</strong>
+        <p>按产品库与参数库建立上下文，快速生成候选参数。</p>
+      </div>
+      <div>
+        <span>03</span>
+        <strong>AI 交付增强</strong>
+        <p>改写、整理、预览、导出，形成稳定的交付闭环。</p>
+      </div>
+    </section>
+
+    <section class="section workflow" id="workflow" aria-labelledby="workflowTitle">
+      <div class="section-heading">
+        <p class="eyebrow">Operational Path</p>
+        <h2 id="workflowTitle">从报价单进入，到 Word 交付离开。</h2>
+        <p>官网不是讲“有 AI”，而是讲清楚 AI 如何嵌入真实参数工作：识别、判断、修正、输出，每一步都有人工可控的落点。</p>
+      </div>
+      <div class="flow-line" aria-label="工作流步骤">
+        <article>
+          <span>上传</span>
+          <h3>识别报价单</h3>
+          <p>读取报价单中的产品名称、版本、模块、配置和备注，先把非结构化内容拆成可理解的业务线索。</p>
+        </article>
+        <article>
+          <span>分析</span>
+          <h3>判断产品上下文</h3>
+          <p>将报价单中的产品信息映射到参数库产品树，降低选错型号、版本和产品线的风险。</p>
+        </article>
+        <article>
+          <span>匹配</span>
+          <h3>自动推荐参数</h3>
+          <p>根据参数库、厂商满足情况、优势项和缺失项生成候选集，保留人工选择空间。</p>
+        </article>
+        <article>
+          <span>编辑</span>
+          <h3>手动深度定制</h3>
+          <p>支持新增空白、重排、删除、单条改写和手工精修，不把交付锁死在固定模板里。</p>
+        </article>
+        <article>
+          <span>交付</span>
+          <h3>整理格式并导出</h3>
+          <p>AI 整理格式后生成更清晰的参数文本，可复制或导出 Word，直接进入投标交付。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section advantages" id="advantages" aria-labelledby="advantagesTitle">
+      <div class="section-heading wide">
+        <p class="eyebrow">Advantage Matrix</p>
+        <h2 id="advantagesTitle">优势不是单点功能，而是一套可控的参数生产系统。</h2>
+      </div>
+      <div class="advantage-grid">
+        <article class="advantage-card large">
+          <div class="card-index">A01</div>
+          <h3>自动识别报价单</h3>
+          <p>将复杂 Excel 或报价内容转化为系统可以理解的产品线索，自动抽取产品、模块、配置项和可能的版本描述。它适合高频更新、高规格差异、多产品混合的报价场景，减少人工在表格中反复查找。</p>
+          <ul>
+            <li>降低读表成本</li>
+            <li>保留原始上下文</li>
+            <li>支持后续自动匹配</li>
+          </ul>
+        </article>
+        <article class="advantage-card">
+          <div class="card-index">A02</div>
+          <h3>自动匹配参数</h3>
+          <p>根据产品库和参数库建立对应关系，自动筛选候选参数，帮助使用者快速进入“确认和精修”阶段。</p>
+        </article>
+        <article class="advantage-card">
+          <div class="card-index">A03</div>
+          <h3>高可定制编辑</h3>
+          <p>参数不是一次性生成后就结束，系统允许新增、删除、排序、手动改写和空白补充，适应不同投标口径。</p>
+        </article>
+        <article class="advantage-card">
+          <div class="card-index">A04</div>
+          <h3>AI 改写</h3>
+          <p>针对单条参数进行语义优化，让表达更符合交付语气，同时保留用户确认替换的控制权。</p>
+        </article>
+        <article class="advantage-card">
+          <div class="card-index">A05</div>
+          <h3>AI 整理格式</h3>
+          <p>将多条参数整理为更顺滑的编号、段落和交付格式，减少最终复制、排版、导出前的机械整理。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section fastgpt" id="fastgpt" aria-labelledby="fastgptTitle">
+      <div class="fastgpt-visual" aria-hidden="true">
+        <div class="node node-a">Quote</div>
+        <div class="node node-b">Parse</div>
+        <div class="node node-c">Match</div>
+        <div class="node node-d">Rewrite</div>
+        <div class="node node-e">Format</div>
+      </div>
+      <div class="fastgpt-copy">
+        <p class="eyebrow">FastGPT Workflow</p>
+        <h2 id="fastgptTitle">把 AI 能力装进稳定工作流，而不是停留在聊天框。</h2>
+        <p>系统依托 FastGPT 工作流，将报价单提取、产品分析、参数选择、单条改写、格式整理拆成可配置的流程节点。每个节点可以独立调整 Prompt、模型和接口配置，让复杂任务被拆解、追踪和优化。</p>
+        <div class="workflow-points">
+          <span>流程可配置</span>
+          <span>节点可替换</span>
+          <span>结果可校验</span>
+          <span>交付可复用</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section detail-pages" aria-label="优势阐述">
+      <article>
+        <span class="page-number">01</span>
+        <h2>对销售与投标人员：更快从“资料堆”进入“可交付”。</h2>
+        <p>过去要先读报价单、查产品、翻参数库、判断优势项，再手动复制成交付文本。现在系统把识别和匹配前置，用户主要做确认、补充和定稿，真正节省的是每天反复消耗的判断时间。</p>
+      </article>
+      <article>
+        <span class="page-number">02</span>
+        <h2>对参数库维护者：更新频率高也能保持统一出口。</h2>
+        <p>参数库通过后台上传和校验刷新，前端按最新库工作。即使产品、版本和厂商对比频繁变动，用户看到的仍是一套统一的选择与交付界面。</p>
+      </article>
+      <article>
+        <span class="page-number">03</span>
+        <h2>对管理者：本地部署、后台可控、升级有回滚。</h2>
+        <p>系统支持同端口后台、反馈本地查看、数据库上传、代码升级、备份回滚和守护进程启动，适合生产环境网络受限的公司内网。</p>
+      </article>
+    </section>
+
+    <section class="section delivery" id="delivery" aria-labelledby="deliveryTitle">
+      <div class="section-heading">
+        <p class="eyebrow">Delivery Surface</p>
+        <h2 id="deliveryTitle">从“能生成”到“能交付”。</h2>
+        <p>真正的优势在最后一公里：用户可以看得懂、改得动、能导出、可追溯。AI 负责提速，人保留最终判断。</p>
+      </div>
+      <div class="comparison">
+        <div>
+          <h3>传统方式</h3>
+          <p>人工读报价单，手工查库，复制粘贴，重复排版，出错后难以追踪。</p>
+        </div>
+        <div>
+          <h3>AI 参数系统</h3>
+          <p>自动识别、自动匹配、人工精修、AI 改写、格式整理、复制或导出 Word。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section" aria-labelledby="ctaTitle">
+      <p class="eyebrow">Ready for Internal Deployment</p>
+      <h2 id="ctaTitle">让参数交付从经验劳动，升级为智能工作流。</h2>
+      <a class="primary-action" href="/">立即体验系统</a>
+    </section>
+  </main>
+
+  <script src="/official/site.js" defer></script>
+</body>
+</html>
