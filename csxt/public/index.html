@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI参数系统</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
-<link rel="stylesheet" href="css/app.css?v=welcome-layout-20260520c">
+<link rel="stylesheet" href="css/app.css?v=mobile-opt-20260601">
 </head>
 <body>
 
@@ -36,14 +38,14 @@
 
 <main class="main">
 <div class="mobile-work-context" aria-label="手机端当前产品">
-  <button type="button" class="mobile-current-product" onclick="openMobileProductDrawer(event)" aria-label="切换当前产品">
-    <span>当前产品</span>
+  <button type="button" class="mobile-current-product" onclick="openMobileProductDrawer(event)" aria-label="切换当前产品" aria-haspopup="dialog">
+    <span class="mobile-product-kicker">当前产品</span>
     <strong id="mobileContextProductName">未选择产品</strong>
     <em id="mobileContextInstanceName">请选择产品</em>
   </button>
   <div class="mobile-context-actions">
-    <button type="button" class="mobile-context-btn" onclick="addInstanceFromCurrentProduct(event)">新增</button>
-    <button type="button" class="mobile-context-btn primary" onclick="openMobileProductDrawer(event)">切换</button>
+    <button type="button" class="mobile-context-btn" onclick="addInstanceFromCurrentProduct(event)" aria-label="新增产品实例">新增</button>
+    <button type="button" class="mobile-context-btn primary" onclick="openMobileProductDrawer(event)" aria-label="打开产品库">产品库</button>
   </div>
 </div>
 <aside class="sidebar" aria-label="产品导航">
@@ -137,6 +139,10 @@
       <div class="param-select-head">
         <h4>
           参数选择
+          <span class="param-search">
+            <input id="paramSearchInput" type="search" placeholder="搜索参数、模块、备注" autocomplete="off" oninput="handleParamSearchInput(this.value)" aria-label="搜索参数">
+            <button type="button" id="paramSearchClear" onclick="clearParamSearch()" aria-label="清空搜索" title="清空搜索" hidden>×</button>
+          </span>
           <span class="param-head-tools">
             <span class="param-legend" aria-label="颜色说明">
               <span class="legend-item"><span class="legend-dot ok"></span>满足</span>
@@ -153,8 +159,8 @@
         </div>
       </div>
       <div id="paramList" tabindex="0" aria-label="参数选择列表"></div>
-      <div class="mobile-select-cta" aria-label="已选参数快捷操作">
-        <button type="button" onclick="setMobileTab('edit')">
+      <div class="mobile-select-cta is-empty" aria-label="已选参数快捷操作" hidden>
+        <button type="button" onclick="setMobileTab('edit')" disabled aria-disabled="true">
           <span id="mobileSelectCtaText">已选 0 条</span>
           <strong>去编辑</strong>
         </button>
@@ -167,9 +173,12 @@
 
     <div class="section section-edit">
       <h4>
-        已选参数
+        <span class="edit-head-title">已选参数</span>
         <span class="edit-head-right">
-          <button type="button" class="mobile-continue-select" onclick="setMobileTab('select')">继续选参</button>
+          <button type="button" class="btn-batch btn-batch-select" data-batch-select-all onclick="toggleBatchSelectAllFromButton(this)">全选</button>
+          <button type="button" class="btn-batch btn-batch-cancel" data-batch-clear onclick="clearBatchSelection()">取消</button>
+          <button type="button" class="btn-batch btn-batch-danger" data-batch-action="delete" onclick="confirmBatchRemoveSelected(event.currentTarget)">删除</button>
+          <button type="button" class="btn-batch btn-batch-ai" data-batch-action="rewrite" onclick="openBatchRewriteModal(event.currentTarget,'regular')">改写</button>
           <button type="button" class="btn-add-custom" onclick="addCustomParam(event)">新增空白</button>
           <span class="count-badge" id="selectedCount">0 条</span>
         </span>
@@ -227,10 +236,10 @@
 </nav>
 </div>
 
-<script src="js/ai-client.js"></script>
-<script src="js/mobile.js"></script>
-<script src="js/quote-parser.js"></script>
-<script src="js/app.js?v=welcome-layout-20260520c"></script>
+<script src="js/ai-client.js?v=quote-fix-20260521b"></script>
+<script src="js/mobile.js?v=mobile-opt-20260601"></script>
+<script src="js/quote-parser.js?v=quote-fix-20260521b"></script>
+<script src="js/app.js?v=mobile-opt-20260601"></script>
 
 </body>
 </html>

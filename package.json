@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "node csxt/server/server.mjs",
-    "start:supervised": "node csxt/server/supervisor.mjs"
+    "start:supervised": "node csxt/server/supervisor.mjs",
+    "package:update": "node scripts/build-update-package.mjs"
   },
   "dependencies": {
     "adm-zip": "^0.5.16"

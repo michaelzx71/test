@@ -138,8 +138,11 @@
   }
 
   function setupReveal() {
-    const targets = document.querySelectorAll(".proof-band, .section-heading, .flow-line article, .advantage-card, .fastgpt-visual, .fastgpt-copy, .detail-pages article, .comparison div, .cta-section");
-    targets.forEach(target => target.classList.add("reveal"));
+    const targets = document.querySelectorAll(".proof-band, .section-heading, .flow-line article, .advantage-card, .fastgpt-visual, .fastgpt-copy, .detail-pages article, .comparison div, .cta-section, .video-metrics span");
+    targets.forEach((target, index) => {
+      target.classList.add("reveal");
+      target.style.setProperty("--reveal-delay", `${Math.min((index % 6) * 80, 360)}ms`);
+    });
     if (!("IntersectionObserver" in window)) {
       targets.forEach(target => target.classList.add("is-visible"));
       return;
@@ -155,6 +158,36 @@
     targets.forEach(target => observer.observe(target));
   }
 
+  function setupParallax() {
+    const reducedMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const consolePanel = document.querySelector(".hero-video-console");
+    if (reducedMotion || !consolePanel) return;
+
+    let nextX = 0;
+    let nextY = 0;
+    let raf = 0;
+
+    function render() {
+      raf = 0;
+      consolePanel.style.setProperty("--tilt-x", `${nextY * -4.5}deg`);
+      consolePanel.style.setProperty("--tilt-y", `${nextX * 5.5}deg`);
+    }
+
+    window.addEventListener("pointermove", event => {
+      nextX = (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2;
+      nextY = (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2;
+      if (!raf) raf = requestAnimationFrame(render);
+    }, { passive: true });
+
+    window.addEventListener("pointerleave", () => {
+      nextX = 0;
+      nextY = 0;
+      if (!raf) raf = requestAnimationFrame(render);
+    }, { passive: true });
+  }
+
   setupCanvas();
   setupReveal();
+  setupParallax();
 })();

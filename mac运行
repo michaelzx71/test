@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+for PROFILE in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
+  if [ -f "$PROFILE" ]; then
+    # Finder-launched Terminal windows often miss Homebrew/nvm PATH setup.
+    set +e
+    # shellcheck disable=SC1090
+    . "$PROFILE" >/dev/null 2>&1
+    set -e
+  fi
+done
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+NODE_BIN=""
+if command -v node >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+elif [ -x "/Applications/Codex.app/Contents/Resources/node" ]; then
+  NODE_BIN="/Applications/Codex.app/Contents/Resources/node"
+elif [ -s "$HOME/.nvm/nvm.sh" ]; then
+  set +e
+  # shellcheck disable=SC1090
+  . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+  NODE_BIN="$(command -v node)"
+  set -e
+elif [ -x "$HOME/.asdf/shims/node" ]; then
+  NODE_BIN="$HOME/.asdf/shims/node"
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  echo "[ERROR] Node.js was not found. Please install Node.js LTS first."
+  echo "https://nodejs.org/"
+  exit 1
+fi
+
+echo "Starting supervised production service..."
+echo
+echo "Main app: http://127.0.0.1:7654/"
+echo "Admin:    http://127.0.0.1:7654/superzxy"
+echo
+
+if [ ! -d "$SCRIPT_DIR/node_modules/adm-zip" ]; then
+  echo "[INFO] node_modules/adm-zip was not found."
+  echo "Main app can still start. Admin ZIP hot upgrade needs npm install."
+  echo "Run npm install on an online machine, then sync the whole new folder to production."
+  echo
+fi
+
+echo "This window keeps the service alive and restarts it after admin code upgrades."
+echo "Close this window or press Ctrl+C to stop the service."
+echo
+
+"$NODE_BIN" csxt/server/supervisor.mjs

@@ -6,7 +6,7 @@ function bindQuoteFileInput(){
   input.addEventListener("change",event=>{
     const file=event.target.files && event.target.files[0];
     if(!file){
-      setQuoteUploadState("没有选择文件，可以重新选择。");
+      setQuoteUploadState("没有选择文件，可以重新选择。",{busy:false});
       return;
     }
     setQuoteUploadState("正在识别产品，马上进入匹配确认...",{busy:true});

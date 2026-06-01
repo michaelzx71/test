@@ -89,8 +89,31 @@ function getPreferredCellValue(cell) {
   return cell.v;
 }
 
+function findMergedCellRange(sheet, row, col) {
+  const merges = Array.isArray(sheet && sheet["!merges"]) ? sheet["!merges"] : [];
+  return merges.find(range =>
+    row >= range.s.r &&
+    row <= range.e.r &&
+    col >= range.s.c &&
+    col <= range.e.c
+  ) || null;
+}
+
+function getSheetCellValue(sheet, row, col) {
+  const address = XLSX.utils.encode_cell({ r: row, c: col });
+  const directValue = getPreferredCellValue(sheet && sheet[address]);
+  if (toText(directValue).trim()) return directValue;
+
+  const mergedRange = findMergedCellRange(sheet, row, col);
+  if (!mergedRange) return directValue;
+
+  const mergedAddress = XLSX.utils.encode_cell({ r: mergedRange.s.r, c: mergedRange.s.c });
+  return getPreferredCellValue(sheet && sheet[mergedAddress]);
+}
+
 function getSheetCellText(sheet, address, fallback = "") {
-  const value = getPreferredCellValue(sheet && sheet[address]);
+  const decoded = XLSX.utils.decode_cell(address);
+  const value = getSheetCellValue(sheet, decoded.r, decoded.c);
   const text = toText(value).trim();
   return text || fallback;
 }
@@ -243,8 +266,7 @@ function findParameterHeader(sheet, range) {
     const headers = {};
     const roles = new Set();
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-      const headerText = toText(getPreferredCellValue(cell)).trim();
+      const headerText = toText(getSheetCellValue(sheet, r, c)).trim();
       if (!headerText) continue;
       headers[c] = headerText;
       const role = findHeaderRole(headerText);
@@ -268,8 +290,7 @@ function findHeaderRow(sheet, range, requiredAliases) {
     const headers = {};
     const normalizedHeaders = new Set();
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-      const headerText = toText(getPreferredCellValue(cell)).trim();
+      const headerText = toText(getSheetCellValue(sheet, r, c)).trim();
       if (!headerText) continue;
       headers[c] = headerText;
       normalizedHeaders.add(normalizeFieldKey(headerText));
@@ -307,7 +328,7 @@ function loadProductMatchRules(workbook) {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const header = headerInfo.headers[c];
       if (!header) continue;
-      const value = getPreferredCellValue(sheet[XLSX.utils.encode_cell({ r, c })]);
+      const value = getSheetCellValue(sheet, r, c);
       if (toText(value).trim()) hasData = true;
       rawRule[header] = value;
     }
@@ -354,9 +375,9 @@ function extractTopRowMeta(sheet, range) {
   const meta = {};
   const firstRow = range.s.r;
   for (let c = range.s.c; c <= range.e.c; c += 2) {
-    const key = toText(getPreferredCellValue(sheet[XLSX.utils.encode_cell({ r: firstRow, c })])).trim();
+    const key = toText(getSheetCellValue(sheet, firstRow, c)).trim();
     if (!key) continue;
-    const value = getPreferredCellValue(sheet[XLSX.utils.encode_cell({ r: firstRow, c: c + 1 })]);
+    const value = getSheetCellValue(sheet, firstRow, c + 1);
     meta[normalizeFieldKey(key)] = normalizeMetaValue(key, value);
   }
   return {
@@ -452,27 +473,25 @@ export function loadDatabaseCatalog(sourcePathOrBaseDir) {
       let hasData = false;
 
       for (let c = range.s.c; c <= range.e.c; c++) {
-        const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-        if (!cell) continue;
         const header = headers[c];
         if (!header) continue;
-        rawParam[header] = getPreferredCellValue(cell);
-        hasData = true;
+        const value = getSheetCellValue(sheet, r, c);
+        rawParam[header] = value;
+        if (toText(value).trim()) hasData = true;
       }
 
       vendorHeaders.forEach(item => {
-        const cell = sheet[XLSX.utils.encode_cell({ r, c: item.col })];
-        const value = toText(getPreferredCellValue(cell)).trim();
+        const value = toText(getSheetCellValue(sheet, r, item.col)).trim();
         if (value) {
           vendorSupport[item.header] = value;
         }
       });
 
       const rawModule = Number.isFinite(moduleColumn)
-        ? toText(getPreferredCellValue(sheet[XLSX.utils.encode_cell({ r, c: moduleColumn })])).trim()
+        ? toText(getSheetCellValue(sheet, r, moduleColumn)).trim()
         : getFirstFieldValue(rawParam, FIELD_ALIASES.module, "");
       const rawFunctionItem = Number.isFinite(functionColumn)
-        ? toText(getPreferredCellValue(sheet[XLSX.utils.encode_cell({ r, c: functionColumn })])).trim()
+        ? toText(getSheetCellValue(sheet, r, functionColumn)).trim()
         : getFirstFieldValue(rawParam, FIELD_ALIASES.functionItem, "");
 
       if (rawModule) {

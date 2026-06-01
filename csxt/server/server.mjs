@@ -16,7 +16,12 @@ const START_PORT = readPort();
 const HOST = process.env.HOST || "0.0.0.0";
 const MAX_BODY_SIZE = 10 * 1024 * 1024;
 const MAX_UPSTREAM_RESPONSE_SIZE = 20 * 1024 * 1024;
-const UPSTREAM_TIMEOUT_MS = 180000;
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = Math.max(
+  30000,
+  Number.parseInt(process.env.AI_UPSTREAM_TIMEOUT_MS || `${DEFAULT_UPSTREAM_TIMEOUT_MS}`, 10) || DEFAULT_UPSTREAM_TIMEOUT_MS
+);
+const MIN_UPSTREAM_RETRY_ATTEMPTS = Math.max(1, Number.parseInt(process.env.AI_UPSTREAM_RETRY_ATTEMPTS || "2", 10) || 2);
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const GENERATED_DATA_DIR = path.join(DATA_DIR, "generated");
 const DATABASE_SOURCE_PATH = path.join(DATA_DIR, "database.xlsx");
@@ -39,6 +44,8 @@ const MIME_TYPES = {
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
+  ".png": "image/png",
+  ".mp4": "video/mp4",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".xls": "application/vnd.ms-excel",
   ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
@@ -233,6 +240,8 @@ function serveOfficialStatic(req, res, requestPath) {
 function isAiParamsPublicPath(requestPath) {
   return requestPath === "/" ||
     requestPath === "/index.html" ||
+    requestPath === "/favicon.png" ||
+    requestPath === "/apple-touch-icon.png" ||
     requestPath.startsWith("/css/") ||
     requestPath.startsWith("/js/") ||
     requestPath.startsWith("/vendor/");
@@ -470,6 +479,15 @@ function logAiRequestSummary(body) {
   console.log(`[AI请求] flow=${body.flowKey || "-"} chatId=${body.chatId || "-"} chars=${summary.length}${firstLine}`);
 }
 
+function formatServerDuration(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (value >= 60000) {
+    const minutes = Math.round(value / 60000);
+    return `${minutes} 分钟`;
+  }
+  return `${Math.round(value / 1000)} 秒`;
+}
+
 function requestUpstreamChatCompletion(body, apiKey) {
   return new Promise((resolve, reject) => {
     const { upstreamUrl, payload } = buildUpstreamPayload(body);
@@ -535,12 +553,15 @@ function shouldRetryUpstream(resultOrError) {
 
 async function requestUpstreamWithRetry(body, apiKeys, keyOffset = 0, maxAttempts = 2) {
   let lastError = null;
-  const attempts = Math.max(1, maxAttempts);
+  const attempts = Math.max(1, maxAttempts, MIN_UPSTREAM_RETRY_ATTEMPTS);
   for (let attempt = 0; attempt < attempts; attempt++) {
     const key = apiKeys[(keyOffset + attempt) % apiKeys.length];
     try {
       const result = await requestUpstreamChatCompletion(body, key);
       if (result.statusCode >= 200 && result.statusCode < 300) {
+        if (attempt > 0) {
+          console.log(`[AI重试成功] flow=${body.flowKey || "-"} chatId=${body.chatId || "-"} attempt=${attempt + 1}/${attempts}`);
+        }
         return result;
       }
       lastError = new Error(result.bodyText || `AI_PROXY_${result.statusCode}`);
@@ -548,11 +569,13 @@ async function requestUpstreamWithRetry(body, apiKeys, keyOffset = 0, maxAttempt
       if (!shouldRetryUpstream(result) || attempt === attempts - 1) {
         throw lastError;
       }
+      console.warn(`[AI重试] flow=${body.flowKey || "-"} chatId=${body.chatId || "-"} status=${result.statusCode} attempt=${attempt + 1}/${attempts}`);
     } catch (err) {
       lastError = err;
       if (!shouldRetryUpstream(err) || attempt === attempts - 1) {
         throw lastError;
       }
+      console.warn(`[AI重试] flow=${body.flowKey || "-"} chatId=${body.chatId || "-"} error=${String(err && err.code || err && err.message || err)} attempt=${attempt + 1}/${attempts}`);
     }
   }
   throw lastError || new Error("AI_PROXY_FAILED");
@@ -579,8 +602,8 @@ async function proxyChatCompletion(body, res) {
     });
     res.end(result.bodyText);
   } catch (err) {
-    const statusCode = Number(err && err.statusCode) || 502;
     const classified = classifyProxyError(err);
+    const statusCode = Number(classified.statusCode) || Number(err && err.statusCode) || 502;
     sendJson(res, statusCode, {
       code: classified.code,
       reasonType: classified.reasonType,
@@ -591,6 +614,7 @@ async function proxyChatCompletion(body, res) {
 
 function classifyProxyError(err) {
   const rawMessage = String(err && err.message || err || "");
+  const statusCode = Number(err && err.statusCode) || 0;
   if (/unAuthApiKey|error_message\.514|\"code\"\s*:\s*514/.test(rawMessage)) {
     return {
       code: "AI_AUTH_FAILED",
@@ -602,7 +626,8 @@ function classifyProxyError(err) {
     return {
       code: "AI_UPSTREAM_TIMEOUT",
       reasonType: "timeout",
-      message: "AI 接口请求超时，请检查内网连接或稍后重试。"
+      statusCode: 504,
+      message: `AI 接口等待超过 ${formatServerDuration(UPSTREAM_TIMEOUT_MS)} 仍未返回，FastGPT 供应商可能仍在后台生成，请稍后重试或降低并发。`
     };
   }
   if (rawMessage.includes("UPSTREAM_RESPONSE_TOO_LARGE")) {
@@ -610,6 +635,14 @@ function classifyProxyError(err) {
       code: "AI_RESPONSE_TOO_LARGE",
       reasonType: "upstream",
       message: "AI 接口返回内容过大，请缩小输入或检查工作流输出。"
+    };
+  }
+  if (statusCode === 502 || statusCode === 503 || statusCode === 504) {
+    return {
+      code: "AI_UPSTREAM_TIMEOUT",
+      reasonType: "timeout",
+      statusCode,
+      message: `AI 接口请求超时或上游服务不可用（HTTP ${statusCode}），请检查零信任网络、FastGPT 工作流或应用服务器状态。`
     };
   }
   if (err && err.code === "ENOTFOUND") {
@@ -626,14 +659,14 @@ function classifyProxyError(err) {
       message: `AI 网络连接失败：${err.code}`
     };
   }
-  if (Number(err && err.statusCode) === 401 || Number(err && err.statusCode) === 403) {
+  if (statusCode === 401 || statusCode === 403) {
     return {
       code: "AI_AUTH_FAILED",
       reasonType: "auth",
       message: "AI 接口鉴权失败，请检查 API Key 或权限。"
     };
   }
-  if (Number(err && err.statusCode) === 429) {
+  if (statusCode === 429) {
     return {
       code: "AI_RATE_LIMITED",
       reasonType: "rate_limit",
@@ -772,8 +805,30 @@ function createAppServer(port) {
       return;
     }
 
+    if (requestUrl.pathname === "/api/analytics/event" && req.method === "POST") {
+      try {
+        await getAdminController().handleAnalyticsEvent(req, res);
+      } catch (err) {
+        if (err.message === "BODY_TOO_LARGE") {
+          sendJson(res, 413, { error: "请求体过大" });
+          return;
+        }
+        if (err.message === "BAD_JSON") {
+          sendJson(res, 400, { error: "请求体不是合法 JSON" });
+          return;
+        }
+        sendJson(res, Number(err.statusCode) || 500, { error: "统计事件上报失败" });
+      }
+      return;
+    }
+
     if (requestUrl.pathname === "/api/site-notice" && (req.method === "GET" || req.method === "HEAD")) {
       getAdminController().handleSiteNotice(req, res);
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/app-settings" && (req.method === "GET" || req.method === "HEAD")) {
+      getAdminController().handleAppSettings(req, res);
       return;
     }
 

@@ -35,8 +35,12 @@ pnpm-debug.log*
 csxt/server/ai-config.local.json
 
 # Generated runtime data
+csxt/data/
 csxt/data/generated/
 csxt/data/admin/
 csxt/data/feedback/
 csxt/data/backups/code/
 csxt/data/backups/database-*.xlsx
+
+# Local release/archive artifacts
+update-packages/

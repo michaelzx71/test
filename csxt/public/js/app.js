@@ -28,17 +28,27 @@ const state={
   draftRestorePromptShown:false,
   aiTask:null,
   quoteSelectProgress:null,
+  aiTaskProgressTimer:null,
   draftSavePaused:false,
   draftSaveTimer:null,
   lastDraftSavedAt:"",
   mobileTab:"select",
   mobileSelectScrollByProduct:{},
   paramGroupCollapsed:{},
+  paramSearchQuery:"",
   paramVirtualRows:[],
   paramVirtualRenderFrame:null,
   paramVirtualScrollBound:false,
+  paramVirtualRangeKey:"",
+  paramVirtualNodeCache:new Map(),
+  paramLocateHighlightTimer:null,
+  batchSelectedParamIds:new Set(),
   previewUpdateTimer:null,
   previewUpdatePending:false,
+  textareaResizeFrame:null,
+  pendingTextareaResizes:new Set(),
+  mobileDrawerRestoreFocus:null,
+  appSettings:{mobileEnabled:false,mobileDisabledTitle:"手机端暂未开放",mobileDisabledMessage:"请在电脑工作台操作。"},
 };
 
 const THEME_STORAGE_KEY="canshuxitong_theme";
@@ -47,16 +57,19 @@ const INSTANCE_DOCK_HEIGHT_STORAGE_KEY="canshuxitong_instance_dock_height";
 const DATABASE_CACHE_DB_NAME="csxt-cache-v1";
 const DATABASE_CACHE_STORE_NAME="catalog";
 const DATABASE_CACHE_KEY="database";
-const PARAM_VIRTUAL_OVERSCAN=700;
+const PARAM_VIRTUAL_OVERSCAN=1400;
 const PARAM_ROW_HEIGHTS={
   module:48,
   function:44,
   paramDesktop:116,
   paramMobile:164
 };
+const PARAM_LOCATE_TOP_PADDING_DESKTOP=126;
+const PARAM_LOCATE_TOP_PADDING_MOBILE=168;
 const PREVIEW_UPDATE_DELAY_MS=150;
 const INSTANCE_DOCK_MIN_HEIGHT=150;
 const MAX_CANDIDATE_PRODUCTS=1;
+const QUOTE_AI_MAX_CONCURRENCY=2;
 const MOBILE_BREAKPOINT=860;
 let xlsxLibraryPromise=null;
 
@@ -69,6 +82,7 @@ window.addEventListener("DOMContentLoaded",()=>{
   bindInstanceDockResize();
   initAiSettings();
   loadSiteNotice();
+  loadAppSettings();
   window.addEventListener("keydown",handleGlobalHotkeys);
   window.addEventListener("pointerdown",trackPointerDown,true);
   window.addEventListener("resize",()=>{
@@ -168,6 +182,10 @@ function handleGlobalHotkeys(event){
   if(event.key==="Escape"){
     if(document.body.classList.contains("mobile-menu-open")){
       closeMobileMoreMenu();
+      return;
+    }
+    if(document.body.classList.contains("mobile-product-drawer-open")){
+      closeMobileProductDrawer();
       return;
     }
     if(state.feedbackModal){
@@ -745,6 +763,29 @@ function renderSiteNotice(notice){
   message.textContent=text;
 }
 
+function normalizeAppSettingsPayload(settings){
+  return {
+    mobileEnabled:settings && settings.mobileEnabled === true,
+    mobileDisabledTitle:toText(settings && settings.mobileDisabledTitle).trim() || "手机端暂未开放",
+    mobileDisabledMessage:toText(settings && settings.mobileDisabledMessage).trim() || "请在电脑工作台操作。"
+  };
+}
+
+async function loadAppSettings(){
+  try{
+    const response=await fetch("/api/app-settings",{cache:"no-store"});
+    if(!response.ok) throw new Error(`HTTP_${response.status}`);
+    state.appSettings=normalizeAppSettingsPayload(await response.json());
+  }catch(err){
+    console.warn("读取前台界面开关失败，手机端保持关闭:",err);
+    state.appSettings=normalizeAppSettingsPayload(null);
+  }finally{
+    if(typeof updateMobileMode==="function"){
+      updateMobileMode();
+    }
+  }
+}
+
 function buildDraftFileName(){
   const now=new Date();
   const yyyy=String(now.getFullYear());
@@ -983,6 +1024,9 @@ function openRewriteModePopover(index,anchorEl){
 
 function closeRewriteModal(){
   if(!state.rewriteModal) return;
+  if(state.rewriteModal._onEsc){
+    document.removeEventListener("keydown",state.rewriteModal._onEsc,true);
+  }
   state.rewriteModal.remove();
   state.rewriteModal=null;
   state.rewriteDraft=null;
@@ -994,6 +1038,8 @@ function createRewriteModal(title,subtitle,bodyBuilder){
   modal.className="ai-modal open";
   const panel=document.createElement("div");
   panel.className="ai-modal-panel";
+  panel.setAttribute("role","dialog");
+  panel.setAttribute("aria-modal","true");
   panel.innerHTML=`
     <div class="ai-modal-head">
       <div>
@@ -1012,6 +1058,13 @@ function createRewriteModal(title,subtitle,bodyBuilder){
   modal.addEventListener("pointerdown",event=>{
     if(event.target===modal) closeRewriteModal();
   });
+  modal._onEsc=event=>{
+    if(event.key==="Escape"){
+      event.preventDefault();
+      closeRewriteModal();
+    }
+  };
+  document.addEventListener("keydown",modal._onEsc,true);
   document.body.appendChild(modal);
   state.rewriteModal=modal;
   return modal;
@@ -1085,6 +1138,37 @@ function openRewritePreviewModal(index,mode,requirement,resultText){
       });
       body.querySelector("#rewriteRetryBtn").addEventListener("click",()=>{
         rewriteParamWithAi(index,mode,requirement,body.querySelector("#rewriteRetryBtn"));
+      });
+    }
+  );
+}
+
+function openBatchRewriteModal(anchorEl=null,mode="regular"){
+  const items=getBatchSelectedItems();
+  if(!items.length){
+    showToast("请先勾选要批量改写的参数","error",anchorEl);
+    return;
+  }
+  const isSpecial=mode==="special";
+  createRewriteModal(
+    isSpecial ? "特殊批量 AI 改写" : "常规批量 AI 改写",
+    `将直接改写并替换已勾选的 ${items.length} 条参数，失败项会保留原文。`,
+    body=>{
+      body.innerHTML=`
+        <div class="ai-field"${isSpecial ? "" : " hidden"}>
+          <label class="ai-label">改写要求</label>
+          <textarea class="ai-textarea rewrite-modal-textarea" id="batchRewriteRequirementInput" placeholder="例如：语气更正式；突出安全能力；减少绝对化表述；保留所有型号和数量"></textarea>
+        </div>
+        <div class="ai-actions">
+          <button type="button" class="btn-ai-primary" id="batchRewriteStartBtn">开始改写 ${items.length} 条</button>
+          <button type="button" class="btn-ai-secondary" id="batchRewriteCancelBtn">取消</button>
+          <span class="ai-inline-hint">${isSpecial ? "会按上方特殊要求逐条改写。" : "按常规策略优化表达，不改变技术含义。"}</span>
+        </div>
+        <div class="ai-status" id="rewriteModalStatus"></div>
+      `;
+      body.querySelector("#batchRewriteCancelBtn").addEventListener("click",closeRewriteModal);
+      body.querySelector("#batchRewriteStartBtn").addEventListener("click",event=>{
+        batchRewriteSelectedParams(mode,body.querySelector("#batchRewriteRequirementInput").value,event.currentTarget);
       });
     }
   );
@@ -1470,12 +1554,12 @@ function openQuoteUploadModal(anchor=null){
         </div>
         <button type="button" class="ai-close" title="关闭" aria-label="关闭">×</button>
       </div>
-      <div class="quote-upload-tip">
-        <div class="quote-upload-types">
-          <span>单台配置汇总清单</span>
-          <span>汇总清单</span>
-        </div>
-      </div>
+	      <div class="quote-upload-tip">
+	        <div class="quote-upload-types">
+	          <span>单台配置汇总清单</span>
+	          <span>汇总清单</span>
+	        </div>
+	      </div>
       <div class="quote-upload-status" id="quoteUploadStatus">选择文件后会自动进入产品匹配。</div>
       <div class="ai-actions" style="margin-top:14px;">
         <button type="button" class="btn-ai-primary" id="quoteUploadChooseBtn">选择文件</button>
@@ -1486,7 +1570,7 @@ function openQuoteUploadModal(anchor=null){
     panel.querySelector("#quoteUploadCancelBtn").addEventListener("click",()=>closeQuoteUploadModal(false));
     panel.querySelector("#quoteUploadChooseBtn").addEventListener("click",()=>{
       const input=document.getElementById("quoteFileInput");
-      setQuoteUploadState("正在等待你选择 Excel 文件...");
+      setQuoteUploadState("正在等待你选择报价单文件...");
       if(input){
         input.value="";
         input.click();
@@ -1759,14 +1843,19 @@ function showLoading(message="正在加载数据..."){
 function hideLoading(){
   const overlay=document.getElementById("loading-overlay");
   if(overlay) overlay.remove();
+  if(state.aiTaskProgressTimer){
+    clearInterval(state.aiTaskProgressTimer);
+    state.aiTaskProgressTimer=null;
+  }
   state.aiTask=null;
   state.quoteSelectProgress=null;
 }
 
 function showAiTaskProgress(title,steps,currentIndex=0){
   hideLoading();
-  state.aiTask={title,steps:[...steps],currentIndex,errorIndex:null};
+  state.aiTask={title,steps:[...steps],currentIndex,errorIndex:null,startedAt:performance.now()};
   renderAiTaskProgress();
+  startAiProgressHeartbeat();
 }
 
 function updateAiTaskProgress(currentIndex,errorIndex=null){
@@ -1814,6 +1903,26 @@ function updateQuoteProgressView(statusText,percent){
   if(percentText) percentText.textContent=`${safePercent}%`;
 }
 
+function startAiProgressHeartbeat(){
+  if(state.aiTaskProgressTimer){
+    clearInterval(state.aiTaskProgressTimer);
+  }
+  state.aiTaskProgressTimer=setInterval(()=>{
+    if(state.quoteSelectProgress){
+      renderQuoteSelectProgress();
+    }else if(state.aiTask){
+      renderAiTaskProgress();
+    }
+  },15000);
+}
+
+function getLongRunningStatusText(baseText,startedAt){
+  const base=toText(baseText).trim() || "AI 正在处理";
+  const elapsed=performance.now()-(Number(startedAt) || performance.now());
+  if(elapsed<30000) return base;
+  return `${base} - 已等待 ${formatDurationMs(elapsed)}，FastGPT 繁忙时会继续等待`;
+}
+
 function renderAiTaskProgress(){
   if(!state.aiTask) return;
   const steps=state.aiTask.steps || [];
@@ -1832,7 +1941,7 @@ function renderAiTaskProgress(){
   const statusText=errorIndex!==null
     ? "这一步卡住了，正在收尾提示"
     : (completed>=total ? "搞定，正在收口" : (playfulStatusMap[activeStep] || activeStep));
-  updateQuoteProgressView(statusText,percent);
+  updateQuoteProgressView(getLongRunningStatusText(statusText,state.aiTask.startedAt),percent);
 }
 
 function getQuoteTaskName(task,fallbackIndex=0){
@@ -1840,17 +1949,19 @@ function getQuoteTaskName(task,fallbackIndex=0){
   return name || `产品${fallbackIndex+1}`;
 }
 
-function showQuoteSelectProgress(tasks,concurrency){
+function showQuoteSelectProgress(tasks,taskCount){
   hideLoading();
   state.quoteSelectProgress={
     total:tasks.length,
-    concurrency,
+    taskCount,
     statuses:new Array(tasks.length).fill("waiting"),
     done:0,
     running:0,
-    error:0
+    error:0,
+    startedAt:performance.now()
   };
-  updateQuoteProgressView("准备调用 AI",0);
+  renderQuoteSelectProgress();
+  startAiProgressHeartbeat();
 }
 
 function updateQuoteSelectProgress(taskIndex,status,message){
@@ -1862,12 +1973,18 @@ function updateQuoteSelectProgress(taskIndex,status,message){
   progress.done=progress.statuses.filter(item=>item==="success" || item==="error").length;
   progress.running=progress.statuses.filter(item=>item==="running").length;
   progress.error=progress.statuses.filter(item=>item==="error").length;
+  renderQuoteSelectProgress();
+}
+
+function renderQuoteSelectProgress(){
+  const progress=state.quoteSelectProgress;
+  if(!progress || !Array.isArray(progress.statuses)) return;
   const total=Math.max(progress.total,1);
   const percent=Math.round((progress.done / total) * 100);
   const statusText=progress.done>=progress.total
     ? (progress.error ? `完成，${progress.error} 个失败` : "全部完成")
-    : "正在生成参数";
-  updateQuoteProgressView(statusText,percent);
+    : (progress.running ? `正在生成参数（${progress.running} 个进行中）` : "准备调用 AI");
+  updateQuoteProgressView(getLongRunningStatusText(statusText,progress.startedAt),percent);
 }
 
 // ===== Toast 通知 =====
@@ -2128,8 +2245,7 @@ function getQuoteProductAnalyzeAiSettings(){
   return {
     flowKey:QUOTE_PRODUCT_ANALYZE_AI_FLOW_KEY,
     endpoint:QUOTE_PRODUCT_ANALYZE_AI_ENDPOINT,
-    model:QUOTE_PRODUCT_ANALYZE_AI_MODEL,
-    concurrency:QUOTE_SELECT_CONCURRENCY
+    model:QUOTE_PRODUCT_ANALYZE_AI_MODEL
   };
 }
 
@@ -2138,8 +2254,7 @@ function getQuoteSelectAiSettings(){
     flowKey:QUOTE_SELECT_AI_FLOW_KEY,
     endpoint:QUOTE_SELECT_AI_ENDPOINT,
     apiKeys:[],
-    model:QUOTE_SELECT_AI_MODEL,
-    concurrency:QUOTE_SELECT_CONCURRENCY
+    model:QUOTE_SELECT_AI_MODEL
   };
 }
 
@@ -2551,17 +2666,17 @@ function preprocessQuoteStandard(standardQuote){
     }
   }
   products=products.filter(isValidNormalizedQuoteProduct);
-  const normalized={
-    format:"quote_normalized_v1",
-    source_file:standardQuote.source_file,
-    quote_export_type:detection.type,
-    detection,
-    products,
-    notes:[
-      ...(standardQuote.notes || []),
-      "临时测试：本地已按表头和行模式做归一化，AI 应优先读取 products/components。"
-    ]
-  };
+	  const normalized={
+	    format:"quote_normalized_v1",
+	    source_file:standardQuote.source_file,
+	    quote_export_type:detection.type,
+	    detection,
+	    products,
+	    notes:[
+	      ...(standardQuote.notes || []),
+	      "本地已完成报价单类型识别和产品行归一化。"
+	    ]
+	  };
   return {
     normalized,
     lineItems:buildQuoteLineItemsFromNormalizedProducts(products)
@@ -3405,11 +3520,12 @@ async function runTasksWithLimit(tasks,concurrency,worker){
   return results;
 }
 
-async function requestQuoteSelectWithProgress(settings,tasks,concurrency){
+async function requestQuoteSelectWithProgress(settings,tasks){
   if(!tasks.length) return [];
-  showQuoteSelectProgress(tasks,concurrency);
+  const taskCount=tasks.length;
+  showQuoteSelectProgress(tasks,taskCount);
   const batchStartedAt=performance.now();
-  const results=await runTasksWithLimit(tasks,concurrency,async (task,taskIndex)=>{
+  const results=await runTasksWithLimit(tasks,Math.min(QUOTE_AI_MAX_CONCURRENCY,taskCount),async (task,taskIndex)=>{
     updateQuoteSelectProgress(taskIndex,"running","生成中");
     const startedAt=performance.now();
     try{
@@ -3444,7 +3560,6 @@ async function requestQuoteSelectWithProgress(settings,tasks,concurrency){
     }
   });
   console.info("quote_select batch finished",{
-    concurrency,
     taskCount:tasks.length,
     elapsedMs:Math.round(performance.now()-batchStartedAt),
     results:results.map(item=>({
@@ -3510,19 +3625,113 @@ function normalizeProductAnalyzeResult(parsed){
   };
 }
 
+function buildLocalFirstHardwareParam(quoteProduct){
+  const quoteItem=quoteProduct && typeof quoteProduct==="object" ? quoteProduct : {};
+  const pcCount=extractAuthorizationCount(quoteItem,"PC全量版|PC客户端|端点安全软件.*PC");
+  const serverCount=extractAuthorizationCount(quoteItem,"服务器全量版|服务器端|端点安全软件.*服务器");
+  if(isPureSoftwareQuoteProduct(quoteItem) || pcCount || serverCount || /统一端点安全|端点安全|aES/i.test(getQuoteModelText(quoteItem))){
+    const clientParts=[];
+    if(pcCount) clientParts.push(`PC客户端安全防护软件不少于${pcCount}套`);
+    if(serverCount) clientParts.push(`服务器端安全防护软件不少于${serverCount}套`);
+    const softwareText=[
+      "产品支持纯软件交付",
+      "包含管理控制中心软件及终端客户端软件",
+      clientParts.length ? `本次提供${clientParts.join("、")}` : ""
+    ].filter(Boolean).join("；");
+    return cleanLocalOpeningText(softwareText);
+  }
+
+  const hardwareParts=[];
+  const ports=extractStandardPorts(quoteItem);
+  if(ports) hardwareParts.push(`标准${ports}`);
+  const memory=extractFactValue(quoteItem,["内存大小","内存容量","内存"],["hardware","evidence"]);
+  if(memory) hardwareParts.push(`配置内存≥${memory}`);
+  const disk=extractFactValue(quoteItem,["硬盘容量","数据盘","存储容量"],["hardware","evidence"]);
+  if(disk) hardwareParts.push(`配置硬盘≥${disk}`);
+  if(hasRedundantPower(quoteItem)) hardwareParts.push("配置冗余电源");
+  const height=extractDeviceHeight(quoteItem);
+  if(height) hardwareParts.push(`标准${height}U机架式硬件`);
+
+  const performanceLabels=[
+    "网络层吞吐量",
+    "应用层吞吐量",
+    "防病毒吞吐量",
+    "IPS吞吐量",
+    "全威胁吞吐量",
+    "带宽性能",
+    "支持用户数",
+    "最大并发连接数",
+    "并发连接数",
+    "HTTP新建连接数",
+    "每秒新建连接数",
+    "默认包含运维授权数",
+    "最大可扩展资产数",
+    "图形运维最大并发数",
+    "字符运维最大并发数",
+    "默认包含主机审计许可证书数量",
+    "最大可扩展审计主机许可数",
+    "平均每秒处理日志数",
+    "最大硬件吞吐量",
+    "最大纯数据库流量",
+    "SQL处理性能",
+    "日志检索性能",
+    "存储容量",
+    "存储时长",
+    "吞吐量",
+    "通信带宽"
+  ];
+  const performanceParts=[];
+  const performanceOutputLabels=new Set();
+  performanceLabels.forEach(label=>{
+    const value=extractFactValue(quoteItem,[label],["performance","hardware","evidence"]);
+    if(!value) return;
+    const cleanValue=toText(value)
+      .replace(/^[≥>=≤<]+\s*/,"")
+      .replace(/（单独购买）|\(单独购买\)|（需单独收费）|\(需单独收费\)/g,"")
+      .trim();
+    if(!cleanValue) return;
+    if(label==="带宽性能" && /天/.test(cleanValue)) return;
+    let outputLabel=label==="HTTP新建连接数" ? "每秒新建连接数" : label;
+    if(outputLabel==="默认包含运维授权数") outputLabel="运维授权数";
+    if(outputLabel==="图形运维最大并发数") outputLabel="图形运维并发数";
+    if(outputLabel==="字符运维最大并发数") outputLabel="字符运维并发数";
+    if(outputLabel==="吞吐量" && performanceOutputLabels.has("网络层吞吐量")) return;
+    if(outputLabel==="并发连接数" && performanceOutputLabels.has("最大并发连接数")) return;
+    if(performanceOutputLabels.has(outputLabel)) return;
+    performanceOutputLabels.add(outputLabel);
+    performanceParts.push(`${outputLabel}≥${cleanValue}`);
+  });
+
+  const sections=[];
+  if(hardwareParts.length) sections.push(`产品配置${dedupeExactTextArray(hardwareParts).join("，")}`);
+  if(performanceParts.length) sections.push(dedupeExactTextArray(performanceParts).join("，"));
+  return cleanLocalOpeningText(sections.join("；"));
+}
+
+function getLocalFirstHardwareParamOrEmpty(quoteProduct){
+  const localParam=buildLocalFirstHardwareParam(quoteProduct);
+  const sanitized=sanitizeGeneratedBaseParam(localParam,quoteProduct);
+  const validation=validateGeneratedBaseParam(sanitized);
+  return validation.ok ? sanitized : "";
+}
+
 async function applyProductAnalysesIfAvailable(quoteProducts,settings,quoteRunContext,extractResult,lineItems,anchor=null){
   const status=await getAiFlowStatus();
   const flowStatus=status.quote_product_analyze || {};
   const products=Array.isArray(quoteProducts) ? quoteProducts : [];
   if(!flowStatus.configured){
-    return {
-      products:products.map(product=>({
+    const fallbackProducts=products.map(product=>{
+      const firstHardwareParam=getLocalFirstHardwareParamOrEmpty(product);
+      return {
         ...product,
         product_analysis:null,
-        first_hardware_param:"",
-        product_analysis_error:"quote_product_analyze 工作流未配置，未生成第一条基础参数。"
-      })),
-      notes:["quote_product_analyze 第一阶段未配置，已阻止本地兜底生成第一条基础参数；请配置该工作流后重新生成。"],
+        first_hardware_param:firstHardwareParam,
+        product_analysis_error:firstHardwareParam ? "" : "quote_product_analyze 工作流未配置，未生成第一条基础参数。"
+      };
+    });
+    return {
+      products:fallbackProducts,
+      notes:["quote_product_analyze 第一阶段未配置，已尝试使用本地报价单事实生成第一条基础参数。"],
       elapsedMs:0,
       used:false
     };
@@ -3531,7 +3740,7 @@ async function applyProductAnalysesIfAvailable(quoteProducts,settings,quoteRunCo
   const notes=[];
   const analyzedProducts=await runTasksWithLimit(
     products.map((quoteProduct,index)=>({quoteProduct,index})),
-    Math.max(products.length || 1,1),
+    Math.min(QUOTE_AI_MAX_CONCURRENCY,Math.max(products.length || 1,1)),
     async task=>{
       const name=toText(task.quoteProduct && task.quoteProduct.quote_product_name).trim() || `产品${task.index+1}`;
       try{
@@ -3545,12 +3754,21 @@ async function applyProductAnalysesIfAvailable(quoteProducts,settings,quoteRunCo
         const response=await requestAiCompletion(settings,payload);
         const workflowError=getWorkflowNodeError(response);
         if(workflowError){
-          notes.push(`【${name}】产品分析失败：${workflowError}`);
+          const message=getAiErrorMessage(workflowError);
+          const fallbackParam=getLocalFirstHardwareParamOrEmpty(task.quoteProduct);
+          if(fallbackParam){
+            console.warn("报价单产品分析失败，已用本地事实兜底",{
+              product:name,
+              message
+            });
+          }else{
+            notes.push(`【${name}】产品分析失败：${message}`);
+          }
           return {
             ...task.quoteProduct,
             product_analysis:null,
-            first_hardware_param:"",
-            product_analysis_error:workflowError
+            first_hardware_param:fallbackParam,
+            product_analysis_error:fallbackParam ? "" : message
           };
         }
         let parsedAnalysis=null;
@@ -3562,12 +3780,22 @@ async function applyProductAnalysesIfAvailable(quoteProducts,settings,quoteRunCo
         const analysis=normalizeProductAnalyzeResult(parsedAnalysis);
         const sanitizedParam=sanitizeGeneratedBaseParam(analysis.first_hardware_param,task.quoteProduct);
         const validation=validateGeneratedBaseParam(sanitizedParam);
-        const firstParam=validation.ok ? sanitizedParam : "";
+        let firstParam=validation.ok ? sanitizedParam : "";
         const reviewReasons=[];
         if(!validation.ok){
           reviewReasons.push(...validation.issues);
         }
-        if(reviewReasons.length){
+        if(!firstParam){
+          const fallbackParam=getLocalFirstHardwareParamOrEmpty(task.quoteProduct);
+          if(fallbackParam){
+            firstParam=fallbackParam;
+            console.warn("AI 第一条基础参数不可用，已用本地事实兜底",{
+              product:name,
+              reasons:reviewReasons
+            });
+          }
+        }
+        if(reviewReasons.length && !firstParam){
           notes.push(`【${name}】产品分析需确认：${reviewReasons.join("、")}`);
         }
         return {
@@ -3577,16 +3805,24 @@ async function applyProductAnalysesIfAvailable(quoteProducts,settings,quoteRunCo
             ...analysis,
             first_hardware_param:firstParam
           },
-          product_analysis_error:reviewReasons.length ? reviewReasons.join("、") : ""
+          product_analysis_error:firstParam ? "" : (reviewReasons.length ? reviewReasons.join("、") : "")
         };
       }catch(err){
-        const message=getQuoteParseErrorMessage(err);
-        notes.push(`【${name}】产品分析调用失败：${message}`);
+        const message=getAiErrorMessage(err);
+        const fallbackParam=getLocalFirstHardwareParamOrEmpty(task.quoteProduct);
+        if(fallbackParam){
+          console.warn("报价单产品分析调用失败，已用本地事实兜底",{
+            product:name,
+            message
+          });
+        }else{
+          notes.push(`【${name}】产品分析调用失败：${message}`);
+        }
         return {
           ...task.quoteProduct,
           product_analysis:null,
-          first_hardware_param:"",
-          product_analysis_error:message
+          first_hardware_param:fallbackParam,
+          product_analysis_error:fallbackParam ? "" : message
         };
       }
     }
@@ -3662,54 +3898,196 @@ function getAssistantTextFromResponse(response){
   return "";
 }
 
+function addAiTextCandidate(candidates,seen,source,value){
+  if(typeof value==="string"){
+    const text=value.trim();
+    if(text && !seen.has(text)){
+      seen.add(text);
+      candidates.push({source,text});
+    }
+    return;
+  }
+  if(Array.isArray(value)){
+    value.forEach((item,index)=>addAiTextCandidate(candidates,seen,`${source}[${index}]`,item));
+    return;
+  }
+  if(value && typeof value==="object"){
+    if(isLikelyStructuredAiJsonPayload(value)){
+      const text=JSON.stringify(value);
+      if(text && !seen.has(text)){
+        seen.add(text);
+        candidates.push({source,text});
+      }
+      return;
+    }
+    if(value.type==="text" && value.text!==undefined){
+      addAiTextCandidate(candidates,seen,`${source}.text`,value.text);
+      return;
+    }
+    ["content","text","answer","output","result","response"].forEach(key=>{
+      if(value[key]!==undefined){
+        addAiTextCandidate(candidates,seen,`${source}.${key}`,value[key]);
+      }
+    });
+  }
+}
+
+function collectStructuredAiJsonCandidates(response){
+  const candidates=[];
+  const seen=new Set();
+  const choiceMessage=response && response.choices && response.choices[0] && response.choices[0].message
+    ? response.choices[0].message.content
+    : null;
+  addAiTextCandidate(candidates,seen,"choices[0].message.content",choiceMessage);
+  if(response && response.choices && response.choices[0] && response.choices[0].text){
+    addAiTextCandidate(candidates,seen,"choices[0].text",response.choices[0].text);
+  }
+  if(response && response.data && typeof response.data==="object"){
+    ["result","content","answer","text","output","response"].forEach(key=>{
+      addAiTextCandidate(candidates,seen,`data.${key}`,response.data[key]);
+    });
+  }
+  if(response && typeof response==="object"){
+    ["result","content","answer","text","output","response"].forEach(key=>{
+      addAiTextCandidate(candidates,seen,key,response[key]);
+    });
+  }
+  if(response && Array.isArray(response.responseData)){
+    [...response.responseData].reverse().forEach((node,index)=>{
+      ["textOutput","answerText","answer","content","output","response","result"].forEach(key=>{
+        addAiTextCandidate(candidates,seen,`responseData[-${index+1}].${key}`,node && node[key]);
+      });
+    });
+  }
+  return candidates;
+}
+
+function isLikelyStructuredAiJsonPayload(parsed){
+  if(Array.isArray(parsed)){
+    return parsed.some(item=>item && typeof item==="object");
+  }
+  if(!parsed || typeof parsed!=="object") return false;
+  const keys=[
+    "products",
+    "product",
+    "selected_params",
+    "selectedParams",
+    "parameters",
+    "params",
+    "product_analysis",
+    "first_hardware_param",
+    "matched_template_id"
+  ];
+  return keys.some(key=>Object.prototype.hasOwnProperty.call(parsed,key));
+}
+
 function getWorkflowNodeError(response){
   if(!response || !Array.isArray(response.responseData)) return "";
   const errorNode=response.responseData.find(item=>toText(item && item.errorText).trim());
   return errorNode ? toText(errorNode.errorText).trim() : "";
 }
 
-function parseStructuredAiJsonResponse(response){
-  const assistantText=getAssistantTextFromResponse(response);
-  if(assistantText){
-    const jsonText=extractJsonText(assistantText);
-    return JSON.parse(jsonText);
-  }
-  const content=(
-    response &&
-    response.choices &&
-    response.choices[0] &&
-    response.choices[0].message &&
-    response.choices[0].message.content
-  );
-  if(Array.isArray(content)){
-    const textPart=content.find(item=>item && typeof item==="object" && item.type==="text");
-    if(textPart){
-      const rawText=typeof textPart.text==="string"
-        ? textPart.text
-        : (
-          textPart.text && typeof textPart.text==="object"
-            ? (textPart.text.content || textPart.text.text || "")
-            : ""
-        );
-      if(rawText){
-        const jsonText=extractJsonText(rawText);
-        return JSON.parse(jsonText);
+function parseStructuredAiJsonResponse(response,validateParsed=null){
+  const canUseParsed=parsed=>{
+    if(!isLikelyStructuredAiJsonPayload(parsed)) return {ok:false,reason:"JSON 结构不包含可用字段"};
+    if(typeof validateParsed!=="function") return {ok:true,reason:""};
+    const validation=validateParsed(parsed);
+    if(validation===true || validation===undefined || validation===null) return {ok:true,reason:""};
+    if(validation && validation.ok) return {ok:true,reason:""};
+    return {
+      ok:false,
+      reason:toText(validation && validation.reason).trim() || "JSON 结构未通过当前任务校验"
+    };
+  };
+  if(response && response.data && typeof response.data==="object"){
+    if(response.data.result && typeof response.data.result==="object"){
+      const validation=canUseParsed(response.data.result);
+      if(validation.ok){
+        return response.data.result;
+      }
+    }
+    if(response.data.content && typeof response.data.content==="object"){
+      const validation=canUseParsed(response.data.content);
+      if(validation.ok){
+        return response.data.content;
       }
     }
   }
-  if(typeof content==="string"){
-    const jsonText=extractJsonText(content);
-    return JSON.parse(jsonText);
-  }
-  if(response && response.data && typeof response.data==="object"){
-    if(response.data.result && typeof response.data.result==="object"){
-      return response.data.result;
+  const candidates=collectStructuredAiJsonCandidates(response);
+  const parseErrors=[];
+  for(const candidate of candidates){
+    try{
+      const parsed=JSON.parse(extractJsonText(candidate.text));
+      const validation=canUseParsed(parsed);
+      if(validation.ok){
+        console.info("AI 结构化结果解析成功",{
+          source:candidate.source,
+          length:candidate.text.length
+        });
+        return parsed;
+      }
+      parseErrors.push(`${candidate.source}: ${validation.reason}`);
+    }catch(err){
+      parseErrors.push(`${candidate.source}: ${err && err.message || err}`);
     }
-    if(response.data.content && typeof response.data.content==="object"){
-      return response.data.content;
-    }
   }
+  console.warn("AI 结构化结果解析失败",{
+    candidates:candidates.map(candidate=>({
+      source:candidate.source,
+      length:candidate.text.length,
+      preview:candidate.text.slice(0,120)
+    })),
+    errors:parseErrors.slice(0,8)
+  });
   throw new Error("AI_JSON_NOT_FOUND");
+}
+
+function createQuoteSelectResultValidator(catalogProduct,expectedTaskId=""){
+  const expectedParamIds=new Set(
+    (Array.isArray(catalogProduct && catalogProduct.params) ? catalogProduct.params : [])
+      .map(param=>Number(param && param.param_id))
+      .filter(Number.isFinite)
+  );
+  const expectedProductName=[
+    catalogProduct && catalogProduct.database_name,
+    catalogProduct && catalogProduct.product_line,
+    catalogProduct && catalogProduct.version
+  ].filter(Boolean).join(" / ");
+  const expectedId=toText(expectedTaskId).trim();
+  return parsed=>{
+    if(expectedId){
+      const rootTaskId=getFirstNonEmptyTextValue(parsed,["quote_task_id","task_id","request_id","chat_id","chatId"]);
+      const productTaskIds=Array.isArray(parsed && parsed.products)
+        ? parsed.products.map(product=>getFirstNonEmptyTextValue(product,["quote_task_id","task_id","request_id","chat_id","chatId"])).filter(Boolean)
+        : [];
+      const returnedTaskIds=[rootTaskId,...productTaskIds].filter(Boolean);
+      if(returnedTaskIds.length && !returnedTaskIds.includes(expectedId)){
+        return {
+          ok:false,
+          reason:`quote_task_id 不匹配，期望 ${expectedId}`
+        };
+      }
+    }
+    const normalized=normalizeQuoteParseResult(parsed);
+    const selectedParams=normalized.products.flatMap(product=>Array.isArray(product.selected_params) ? product.selected_params : []);
+    if(selectedParams.length===0){
+      return {ok:false,reason:`未找到 selected_params，期望参数库产品：${expectedProductName || "当前产品"}`};
+    }
+    const numericIds=selectedParams
+      .map(param=>Number(param && param.database_param_id))
+      .filter(Number.isFinite);
+    if(numericIds.length===0){
+      return {ok:true};
+    }
+    const matchedCount=numericIds.filter(id=>expectedParamIds.has(id)).length;
+    if(matchedCount>0){
+      return {ok:true};
+    }
+    return {
+      ok:false,
+      reason:`selected_params 的参数 ID 不属于当前参数库产品：${expectedProductName || "当前产品"}`
+    };
+  };
 }
 
 function getFormatMaterialOptionText(option){
@@ -3857,6 +4235,13 @@ async function formatParamsWithAi(options,anchorEl=null){
   const settings=getFormatAiSettings();
   if(!await isConfiguredAiFlow(settings)){
     showToast("AI 整理格式 API 尚未配置","error",anchorEl);
+    sendAnalyticsEvent({
+      type:"format",
+      status:"failure",
+      durationMs:0,
+      targetParamCount:items.length,
+      errorCode:"AI_CONFIG_MISSING"
+    });
     return;
   }
   if(!isFormatOptionActive(options)){
@@ -3871,6 +4256,7 @@ async function formatParamsWithAi(options,anchorEl=null){
   }
   setFormatStatus("正在调用 AI 整理格式...","");
   showAiTaskProgress("AI 正在整理格式",["准备参数","调用 AI","解析结果","生成预览"],1);
+  const analyticsStartedAt=performance.now();
   try{
     const response=await requestParamFormat(settings,options,items);
     updateAiTaskProgress(2);
@@ -3881,12 +4267,26 @@ async function formatParamsWithAi(options,anchorEl=null){
     updateAiTaskProgress(3);
     hideLoading();
     openFormatPreviewModal(resultItems);
+    sendAnalyticsEvent({
+      type:"format",
+      status:"success",
+      durationMs:performance.now()-analyticsStartedAt,
+      targetParamCount:items.length,
+      paramCount:resultItems.length
+    });
   }catch(err){
     updateAiTaskProgress(state.aiTask ? state.aiTask.currentIndex : 1,state.aiTask ? state.aiTask.currentIndex : 1);
     hideLoading();
     const message=getAiErrorMessage(err);
     setFormatStatus(message,"error");
     showToast(message,"error",anchorEl);
+    sendAnalyticsEvent({
+      type:"format",
+      status:"failure",
+      durationMs:performance.now()-analyticsStartedAt,
+      targetParamCount:items.length,
+      errorCode:getErrorInfo(err).code || "FORMAT_FAILED"
+    });
     console.error(err);
   }finally{
     if(button){
@@ -3984,6 +4384,13 @@ async function rewriteParamWithAi(index,mode,requirement="",anchorEl=null){
     const msg="AI 改写 API 尚未配置，等你搭建好 FastGPT 工作流后把 API 地址和 key 给我即可。";
     setRewriteStatus(msg,"error");
     showToast(msg,"error",anchorEl);
+    sendAnalyticsEvent({
+      type:"rewrite",
+      status:"failure",
+      durationMs:0,
+      targetParamCount:1,
+      errorCode:"AI_CONFIG_MISSING"
+    });
     return;
   }
 
@@ -3994,6 +4401,7 @@ async function rewriteParamWithAi(index,mode,requirement="",anchorEl=null){
     button.textContent="改写中";
   }
   setRewriteStatus("正在调用 AI 改写...","");
+  const analyticsStartedAt=performance.now();
   try{
     const response=await requestParamRewrite(settings,param,mode,requirement);
     setRewriteStatus("正在提取改写内容...","");
@@ -4003,10 +4411,24 @@ async function rewriteParamWithAi(index,mode,requirement="",anchorEl=null){
       throw new Error("AI_EMPTY");
     }
     openRewritePreviewModal(index,mode,requirement,rewritten);
+    sendAnalyticsEvent({
+      type:"rewrite",
+      status:"success",
+      durationMs:performance.now()-analyticsStartedAt,
+      targetParamCount:1,
+      paramCount:1
+    });
   }catch(err){
     const message=getAiErrorMessage(err);
     setRewriteStatus(message,"error");
     showToast(message,"error",anchorEl);
+    sendAnalyticsEvent({
+      type:"rewrite",
+      status:"failure",
+      durationMs:performance.now()-analyticsStartedAt,
+      targetParamCount:1,
+      errorCode:getErrorInfo(err).code || "REWRITE_FAILED"
+    });
     console.error(err);
   }finally{
     if(button){
@@ -4014,6 +4436,172 @@ async function rewriteParamWithAi(index,mode,requirement="",anchorEl=null){
       button.textContent=previousText;
     }
   }
+}
+
+function getBatchSelectedItems(){
+  const selectedIds=state.batchSelectedParamIds instanceof Set ? state.batchSelectedParamIds : new Set();
+  return state.selected
+    .map((param,index)=>({param,index}))
+    .filter(item=>selectedIds.has(String(item.param && item.param.id)));
+}
+
+function pruneBatchSelection(){
+  if(!(state.batchSelectedParamIds instanceof Set)){
+    state.batchSelectedParamIds=new Set();
+  }
+  const validIds=new Set(state.selected.map(param=>String(param.id)));
+  [...state.batchSelectedParamIds].forEach(id=>{
+    if(!validIds.has(id)) state.batchSelectedParamIds.delete(id);
+  });
+}
+
+function updateBatchToolbarState(){
+  const count=getBatchSelectedItems().length;
+  document.querySelectorAll("[data-batch-action]").forEach(button=>{button.disabled=count===0;});
+  document.querySelectorAll("[data-batch-clear]").forEach(button=>{button.disabled=count===0;});
+  document.querySelectorAll("[data-batch-select-all]").forEach(control=>{
+    const allSelected=state.selected.length>0 && count===state.selected.length;
+    const partial=count>0 && count<state.selected.length;
+    if(control.type==="checkbox"){
+      control.checked=allSelected;
+      control.indeterminate=partial;
+    }else{
+      control.classList.toggle("active",allSelected);
+      control.textContent="全选";
+      control.title=partial ? "补全选择" : "全选";
+      control.setAttribute("aria-label",partial ? "补全选择" : "全选");
+      control.disabled=state.selected.length===0;
+    }
+  });
+}
+
+function toggleBatchParamSelection(paramId,checked){
+  if(!(state.batchSelectedParamIds instanceof Set)){
+    state.batchSelectedParamIds=new Set();
+  }
+  const id=String(paramId);
+  if(checked){
+    state.batchSelectedParamIds.add(id);
+  }else{
+    state.batchSelectedParamIds.delete(id);
+  }
+  updateBatchToolbarState();
+}
+
+function toggleBatchSelectAll(checked){
+  state.batchSelectedParamIds=new Set(checked ? state.selected.map(param=>String(param.id)) : []);
+  renderEditArea();
+}
+
+function toggleBatchSelectAllFromButton(button){
+  toggleBatchSelectAll(true);
+}
+
+function clearBatchSelection(){
+  state.batchSelectedParamIds=new Set();
+  renderEditArea();
+}
+
+function setParamContentById(paramId,value){
+  const index=state.selected.findIndex(item=>String(item.id)===String(paramId));
+  if(index===-1) return false;
+  const normalizedValue=normalizeParamContentValue(value);
+  state.selected[index].content=normalizedValue;
+  state.editedContentByParamId[state.selected[index].id]=normalizedValue;
+  return true;
+}
+
+async function confirmBatchRemoveSelected(anchorEl=null){
+  const items=getBatchSelectedItems();
+  if(!items.length){
+    showToast("请先勾选要删除的参数","error",anchorEl);
+    return;
+  }
+  const confirmed=await confirmAtAnchor(`确定要删除已勾选的 ${items.length} 条参数吗？`,anchorEl);
+  if(!confirmed) return;
+  const removeIds=new Set(items.map(item=>String(item.param.id)));
+  state.selected=state.selected.filter(param=>!removeIds.has(String(param.id)));
+  state.batchSelectedParamIds=new Set();
+  syncParamSelectionStates();
+  renderEditArea();
+  schedulePreviewUpdate();
+  updateMobileContext();
+  showToast(`已删除 ${items.length} 条参数`,"success",anchorEl);
+}
+
+async function batchRewriteSelectedParams(mode="regular",requirement="",button=null){
+  const items=getBatchSelectedItems().filter(item=>toText(item.param && item.param.content).trim());
+  if(!items.length){
+    showToast("勾选的参数内容为空，无法改写","error",button);
+    return;
+  }
+  const rewriteMode=mode==="special" ? "special" : "regular";
+  const settings=getRewriteAiSettings();
+  if(!await isConfiguredAiFlow(settings)){
+    const msg="AI 改写 API 尚未配置，等你搭建好 FastGPT 工作流后把 API 地址和 key 给我即可。";
+    setRewriteStatus(msg,"error");
+    showToast(msg,"error",button);
+    sendAnalyticsEvent({
+      type:"rewrite",
+      status:"failure",
+      durationMs:0,
+      targetParamCount:items.length,
+      errorCode:"AI_CONFIG_MISSING"
+    });
+    return;
+  }
+
+  const previousText=button ? button.textContent : "";
+  if(button){
+    button.disabled=true;
+  }
+  const startedAt=performance.now();
+  let successCount=0;
+  let failureCount=0;
+  for(let i=0;i<items.length;i+=1){
+    const item=items[i];
+    if(button){
+      button.textContent=`改写中 ${i+1}/${items.length}`;
+    }
+    setRewriteStatus(`正在改写 ${i+1}/${items.length}：参数 ${item.index+1}`,"");
+    try{
+      const response=await requestParamRewrite(settings,item.param,rewriteMode,requirement);
+      const assistantText=getAssistantTextFromResponse(response);
+      const rewritten=getRewriteContentFromAiText(assistantText);
+      if(!rewritten){
+        throw new Error("AI_EMPTY");
+      }
+      if(setParamContentById(item.param.id,rewritten)){
+        successCount+=1;
+      }else{
+        failureCount+=1;
+      }
+    }catch(err){
+      failureCount+=1;
+      console.error(err);
+    }
+  }
+
+  if(button){
+    button.disabled=false;
+    button.textContent=previousText;
+  }
+  renderEditArea();
+  schedulePreviewUpdate();
+  closeRewriteModal();
+  if(failureCount){
+    showToast(`批量改写完成：成功 ${successCount} 条，失败 ${failureCount} 条`,"error",button);
+  }else{
+    showToast(`已批量改写 ${successCount} 条参数`,"success",button);
+  }
+  sendAnalyticsEvent({
+    type:"rewrite",
+    status:failureCount ? "failure" : "success",
+    durationMs:performance.now()-startedAt,
+    targetParamCount:items.length,
+    paramCount:successCount,
+    errorCode:failureCount ? "BATCH_REWRITE_PARTIAL_FAILED" : ""
+  });
 }
 
 function extractJsonText(rawText){
@@ -4032,90 +4620,175 @@ function extractJsonText(rawText){
   throw new Error("AI_JSON_NOT_FOUND");
 }
 
+function getFirstNonEmptyTextValue(source,keys){
+  const object=source && typeof source==="object" ? source : {};
+  for(const key of keys){
+    if(object[key]===undefined || object[key]===null) continue;
+    const text=toText(object[key]).trim();
+    if(text) return text;
+  }
+  return "";
+}
+
+function getFirstDefinedValue(source,keys){
+  const object=source && typeof source==="object" ? source : {};
+  for(const key of keys){
+    if(object[key]!==undefined && object[key]!==null){
+      return object[key];
+    }
+  }
+  return undefined;
+}
+
+function normalizeSelectedParamSpec(spec){
+  if(!spec || typeof spec!=="object") return null;
+  const rawParamId=getFirstDefinedValue(spec,["database_param_id","param_id","id","databaseParamId","paramId"]);
+  const title=getFirstNonEmptyTextValue(spec,["title","name","param_title","parameter_title","paramName"]);
+  const finalContent=getFirstNonEmptyTextValue(spec,["final_content","finalContent","content","text","body"]);
+  return {
+    ...spec,
+    database_param_id:rawParamId,
+    title,
+    final_content:finalContent
+  };
+}
+
+function getSelectedParamSourceKey(source){
+  if(!source || typeof source!=="object") return "";
+  return ["selected_params","selectedParams","parameters","params"].find(key=>Object.prototype.hasOwnProperty.call(source,key)) || "";
+}
+
 function normalizeQuoteParseResult(parsed){
   const result=parsed && typeof parsed==="object" ? parsed : {};
+  const rawNotes=Array.isArray(result.notes) ? result.notes : (result.notes ? [result.notes] : []);
+  const notes=rawNotes.map(item=>toText(item).trim()).filter(Boolean);
+  const resultParamKey=getSelectedParamSourceKey(result);
   const rawProducts=Array.isArray(result)
     ? result
     : (
       Array.isArray(result.products)
         ? result.products
-        : (result.product ? [result.product] : [])
+        : (
+          result.product
+            ? [result.product]
+            : (resultParamKey ? [result] : [])
+        )
     );
   const products=rawProducts
     .filter(item=>item && typeof item==="object")
-    .map(item=>({
-      ...item,
-      first_hardware_param:normalizeFirstHardwareParamValue(item.first_hardware_param),
-      product_analysis:item.product_analysis && typeof item.product_analysis==="object" ? item.product_analysis : null,
-      product_analysis_error:toText(item.product_analysis_error).trim(),
-      selected_params:Array.isArray(item.selected_params)
-        ? item.selected_params
-        : (
-          Array.isArray(item.selectedParams)
-            ? item.selectedParams
-            : (
-              Array.isArray(item.parameters)
-                ? item.parameters
-                : (Array.isArray(item.params) ? item.params : [])
-            )
-        )
-    }));
-  const rawNotes=Array.isArray(result.notes) ? result.notes : (result.notes ? [result.notes] : []);
-  const notes=rawNotes.map(item=>toText(item).trim()).filter(Boolean);
-  return {products,notes};
+    .map((item,index)=>{
+      const selectedParamKey=getSelectedParamSourceKey(item);
+      const rawSelectedValue=selectedParamKey ? item[selectedParamKey] : [];
+      const rawSelectedParams=Array.isArray(rawSelectedValue) ? rawSelectedValue : [];
+      if(selectedParamKey && rawSelectedValue!==undefined && rawSelectedValue!==null && !Array.isArray(rawSelectedValue)){
+        const productName=getFirstNonEmptyTextValue(item,["quote_product_name","product_name","name","instance_name","instanceName"]) || `产品${index+1}`;
+        notes.push(`【${productName}】AI 返回的 ${selectedParamKey} 不是数组，已只应用第一条基础参数。`);
+      }
+      return {
+        ...item,
+        quote_product_name:getFirstNonEmptyTextValue(item,["quote_product_name","product_name","name"]) || toText(item.quote_product_name).trim(),
+        database_product_hint:getFirstNonEmptyTextValue(item,["database_product_hint","database_name","product_hint"]) || toText(item.database_product_hint).trim(),
+        instance_name:getFirstNonEmptyTextValue(item,["instance_name","instanceName","quote_product_name","product_name","name"]) || toText(item.instance_name).trim(),
+        first_hardware_param:normalizeFirstHardwareParamValue(item.first_hardware_param),
+        product_analysis:item.product_analysis && typeof item.product_analysis==="object" ? item.product_analysis : null,
+        product_analysis_error:toText(item.product_analysis_error).trim(),
+        selected_params:rawSelectedParams
+          .map(normalizeSelectedParamSpec)
+          .filter(Boolean)
+      };
+    });
+  return {products,notes:dedupeExactTextArray(notes)};
+}
+
+function dedupeExactTextArray(values){
+  const seen=new Set();
+  const result=[];
+  (Array.isArray(values) ? values : []).forEach(value=>{
+    const text=toText(value).trim();
+    if(!text || seen.has(text)) return;
+    seen.add(text);
+    result.push(text);
+  });
+  return result;
 }
 
 function validateQuoteParseResultStructure(parsedResult){
   if(!parsedResult || !Array.isArray(parsedResult.products)){
     throw new Error("AI_SELECT_INVALID_STRUCTURE");
   }
+  const notes=dedupeExactTextArray(Array.isArray(parsedResult.notes) ? parsedResult.notes : []);
+  const products=[];
   parsedResult.products.forEach((product,index)=>{
     if(!product || typeof product!=="object"){
-      throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品不是对象`);
+      notes.push(`第 ${index+1} 个 AI 返回产品不是对象，已跳过。`);
+      return;
     }
-    if(!Array.isArray(product.selected_params)){
-      throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品缺少 selected_params`);
-    }
-    product.selected_params.forEach((param,paramIndex)=>{
+    const productName=toText(product.quote_product_name || product.instance_name).trim() || `产品${index+1}`;
+    const selectedParams=[];
+    const rawSelectedParams=Array.isArray(product.selected_params) ? product.selected_params : [];
+    rawSelectedParams.forEach((param,paramIndex)=>{
       if(!param || typeof param!=="object"){
-        throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品的第 ${paramIndex+1} 条参数不是对象`);
+        notes.push(`【${productName}】第 ${paramIndex+1} 条 AI 返回参数不是对象，已跳过。`);
+        return;
       }
-      if(!Number.isFinite(Number(param.database_param_id))){
-        throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品的第 ${paramIndex+1} 条参数缺少 database_param_id`);
+      const hasId=Number.isFinite(Number(param.database_param_id));
+      const hasTitle=Boolean(toText(param.title).trim());
+      if(!hasId && !hasTitle){
+        notes.push(`【${productName}】第 ${paramIndex+1} 条 AI 返回参数缺少可匹配的参数 ID 或标题，已跳过。`);
+        return;
       }
-      if(!toText(param.title).trim()){
-        throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品的第 ${paramIndex+1} 条参数缺少 title`);
-      }
-      if(!toText(param.final_content).trim()){
-        throw new Error(`AI_SELECT_INVALID_STRUCTURE: 第 ${index+1} 个产品的第 ${paramIndex+1} 条参数缺少 final_content`);
-      }
+      selectedParams.push(param);
+    });
+    products.push({
+      ...product,
+      selected_params:selectedParams
     });
   });
-  return parsedResult;
+  return {products,notes:dedupeExactTextArray(notes)};
 }
 
 async function parseQuoteFile(file,anchor=null){
-  const productAnalyzeSettings=getQuoteProductAnalyzeAiSettings();
-  const selectSettings=getQuoteSelectAiSettings();
-  if(!await isConfiguredAiFlow(selectSettings)){
-    showToast("请先在后端配置参数选择流","error",anchor);
-    return;
-  }
-  if(!file){
-    showToast("请先选择报价单","error",anchor);
-    return;
-  }
-  if(state.products.length===0){
-    showToast("请先生成并载入参数库","error",anchor);
-    return;
-  }
-
+  let quoteAnalyticsStartedAt=0;
+  const quoteAnalyticsContext={
+    productCount:0,
+    paramCount:0,
+    selectTaskCount:0,
+    aiDurationMs:0
+  };
   try{
+    if(!file){
+      const message="请先选择报价单";
+      setQuoteUploadState("没有选择文件，可以重新选择。",{busy:false});
+      showToast(message,"error",anchor);
+      return;
+    }
+    if(state.products.length===0){
+      const message="请先生成并载入参数库";
+      setQuoteUploadState(message,{busy:false});
+      showToast(message,"error",anchor);
+      return;
+    }
+    const productAnalyzeSettings=getQuoteProductAnalyzeAiSettings();
+    const selectSettings=getQuoteSelectAiSettings();
+    if(!await isConfiguredAiFlow(selectSettings)){
+      const message="请先在后端配置参数选择流";
+      setQuoteUploadState(message,{busy:false});
+      showToast(message,"error",anchor);
+      sendAnalyticsEvent({
+        type:"generate_params",
+        status:"failure",
+        durationMs:0,
+        errorCode:"AI_CONFIG_MISSING"
+      });
+      return;
+    }
+
+    quoteAnalyticsStartedAt=performance.now();
     const quoteRunContext=createQuoteRunContext(await getFileHash(file));
     const standardQuote=await standardizeQuoteFile(file);
     const preprocessResult=preprocessQuoteStandard(standardQuote);
     const detectedQuoteType=toText(preprocessResult && preprocessResult.normalized && preprocessResult.normalized.quote_export_type).trim();
-    if(!["single_unit_summary","aggregate_summary"].includes(detectedQuoteType)){
+    if(!["single_unit_summary","aggregate_summary","detail_itemized"].includes(detectedQuoteType)){
       throw new Error("当前仅支持“单台配置汇总清单”和“汇总清单”，请更换报价单类型后重试。");
     }
     const lineItems=preprocessResult.lineItems && preprocessResult.lineItems.length
@@ -4173,6 +4846,7 @@ async function parseQuoteFile(file,anchor=null){
     if(quoteProducts.length===0){
       throw new Error("QUOTE_EMPTY");
     }
+    quoteAnalyticsContext.productCount=quoteProducts.length;
     const productAnalyzeResult=await applyProductAnalysesIfAvailable(
       quoteProducts,
       productAnalyzeSettings,
@@ -4200,21 +4874,30 @@ async function parseQuoteFile(file,anchor=null){
     const selectTasks=[];
     for(let index=0;index<quoteProducts.length;index+=1){
       const quoteProduct=quoteProducts[index];
-      if(!normalizeFirstHardwareParamValue(quoteProduct && quoteProduct.first_hardware_param)){
+      const firstHardwareParam=normalizeFirstHardwareParamValue(quoteProduct && quoteProduct.first_hardware_param);
+      if(!firstHardwareParam){
         aggregatedResult.notes.push(`【${toText(quoteProduct && quoteProduct.quote_product_name).trim() || `产品${index+1}`}】第一阶段未生成第一条基础参数，已跳过第二阶段选参`);
         aggregatedResult.products.push(makeParsedProductFromQuoteSource(quoteProduct,[]));
         continue;
       }
-	      const productStrategy={
-	        ...generationStrategy,
-	        target_param_count:Number(quoteProduct && quoteProduct.target_param_count) || 15
-	      };
-	      const candidateCatalog=buildCandidateCatalogContext(confirmedExtractResult,quoteProduct,productStrategy);
-	      if(candidateCatalog.total_products===0 || candidateCatalog.total_params===0){
-	        aggregatedResult.notes.push(`【${toText(quoteProduct.quote_product_name).trim() || `产品${index+1}`}】本地未找到匹配的参数库产品或参数`);
-	        aggregatedResult.products.push(makeParsedProductFromQuoteSource(quoteProduct,[]));
-	        continue;
-	      }
+      const requestedTargetParamCount=Math.min(30,Math.max(1,Number(quoteProduct && quoteProduct.target_param_count) || Number(generationStrategy && generationStrategy.target_param_count) || 15));
+      const selectTargetParamCount=Math.max(0,requestedTargetParamCount-1);
+      if(selectTargetParamCount===0){
+        aggregatedResult.products.push(makeParsedProductFromQuoteSource(quoteProduct,[]));
+        continue;
+      }
+      const productStrategy={
+        ...generationStrategy,
+        target_param_count:selectTargetParamCount
+      };
+      const candidateCatalog=buildCandidateCatalogContext(confirmedExtractResult,quoteProduct,productStrategy);
+      if(candidateCatalog.total_products===0 || candidateCatalog.total_params===0){
+        aggregatedResult.notes.push(`【${toText(quoteProduct.quote_product_name).trim() || `产品${index+1}`}】本地未找到匹配的参数库产品或参数`);
+        aggregatedResult.products.push(makeParsedProductFromQuoteSource(quoteProduct,[]));
+        continue;
+      }
+      const expectedCatalogProduct=Array.isArray(candidateCatalog.products) ? candidateCatalog.products[0] : null;
+      const quoteTaskId=makeFastGptChatId("quote-select",quoteRunContext,`p${index+1}`);
       const candidateCatalogText=formatCandidateCatalogForAi(candidateCatalog);
       const quoteAnalysisText=formatQuoteProductForSelectAi(quoteProduct,{
         quoteExportType:confirmedExtractResult.quote_export_type,
@@ -4223,23 +4906,37 @@ async function parseQuoteFile(file,anchor=null){
       selectTasks.push({
         index,
         quoteProduct,
+        expectedCatalogProduct,
+        quoteTaskId,
         payload:buildQuoteSelectPayload(
           selectSettings,
           quoteAnalysisText,
           candidateCatalogText,
           productStrategy,
-          {chatId:makeFastGptChatId("quote-select",quoteRunContext,`p${index+1}`)}
+          {
+            chatId:quoteTaskId,
+            productRule:{
+              quote_task_id:quoteTaskId,
+              quote_product_name:toText(quoteProduct && quoteProduct.quote_product_name).trim(),
+              database_product_name:[
+                expectedCatalogProduct && expectedCatalogProduct.database_name,
+                expectedCatalogProduct && expectedCatalogProduct.product_line,
+                expectedCatalogProduct && expectedCatalogProduct.version
+              ].filter(Boolean).join(" / ")
+            }
+          }
         )
-      });
-    }
+	      });
+	    }
+    quoteAnalyticsContext.selectTaskCount=selectTasks.length;
     if(selectTasks.length>0){
       updateAiTaskProgress(2);
-      const concurrency=Math.max(selectTasks.length || 1,1);
       const selectStartedAt=performance.now();
-      const batchResults=await requestQuoteSelectWithProgress(selectSettings,selectTasks,concurrency);
+      const batchResults=await requestQuoteSelectWithProgress(selectSettings,selectTasks);
       quoteRunContext.timings.selectMs=performance.now()-selectStartedAt;
       batchResults.forEach(({task,result})=>{
         const productName=toText(task && task.quoteProduct && task.quoteProduct.quote_product_name).trim() || `产品${(task && task.index || 0)+1}`;
+        const recoverableBaseParam=normalizeFirstHardwareParamValue(task && task.quoteProduct && task.quoteProduct.first_hardware_param);
 	        if(!result || result.ok===false){
 	          const reasonInfo=[
 	            toText(result && result.error,"AI 调用失败"),
@@ -4247,18 +4944,35 @@ async function parseQuoteFile(file,anchor=null){
             result && result.status ? `状态码：${result.status}` : "",
             result && result.elapsedMs ? `耗时：${formatDurationMs(result.elapsedMs)}` : ""
 	          ].filter(Boolean).join("，");
-	          aggregatedResult.notes.push(`【${productName}】参数选择失败：${reasonInfo}`);
+	          if(recoverableBaseParam){
+	            console.warn("报价单参数选择失败，已保留第一条基础参数",{
+	              product:productName,
+	              reason:reasonInfo
+	            });
+	          }else{
+	            aggregatedResult.notes.push(`【${productName}】参数选择失败：${reasonInfo}`);
+	          }
 	          aggregatedResult.products.push(makeParsedProductFromQuoteSource(task && task.quoteProduct,[]));
 	          return;
 	        }
 	        const workflowError=getWorkflowNodeError(result.data);
 	        if(workflowError){
-	          aggregatedResult.notes.push(`【${productName}】参数选择失败：${workflowError}`);
+	          if(recoverableBaseParam){
+	            console.warn("报价单参数选择工作流失败，已保留第一条基础参数",{
+	              product:productName,
+	              reason:workflowError
+	            });
+	          }else{
+	            aggregatedResult.notes.push(`【${productName}】参数选择失败：${workflowError}`);
+	          }
 	          aggregatedResult.products.push(makeParsedProductFromQuoteSource(task && task.quoteProduct,[]));
 	          return;
 	        }
 	        try{
-	          const parsed=normalizeQuoteParseResult(parseStructuredAiJsonResponse(result.data));
+	          const parsed=normalizeQuoteParseResult(parseStructuredAiJsonResponse(
+	            result.data,
+	            createQuoteSelectResultValidator(task && task.expectedCatalogProduct,task && task.quoteTaskId)
+	          ));
 	          if(parsed.products.length){
 	            parsed.products.forEach(product=>{
 	              const stageFirstParam=normalizeFirstHardwareParamValue(task && task.quoteProduct && task.quoteProduct.first_hardware_param);
@@ -4280,14 +4994,22 @@ async function parseQuoteFile(file,anchor=null){
 	          }
 	          aggregatedResult.notes.push(...parsed.notes);
 	        }catch(parseErr){
-	          aggregatedResult.notes.push(`【${productName}】参数选择结果解析失败：${getQuoteParseErrorMessage(parseErr)}`);
+	          if(recoverableBaseParam){
+	            console.warn("报价单参数选择结果解析失败，已保留第一条基础参数",{
+	              product:productName,
+	              reason:getQuoteParseErrorMessage(parseErr)
+	            });
+	          }else{
+	            aggregatedResult.notes.push(`【${productName}】参数选择结果解析失败：${getQuoteParseErrorMessage(parseErr)}`);
+	          }
 	          aggregatedResult.products.push(makeParsedProductFromQuoteSource(task && task.quoteProduct,[]));
 	        }
 	      });
-	    }
+    }
     quoteRunContext.timings.totalAiMs=(Number(quoteRunContext.timings.extractMs) || 0) + (Number(quoteRunContext.timings.productAnalyzeMs) || 0) + (Number(quoteRunContext.timings.selectMs) || 0);
+    quoteAnalyticsContext.aiDurationMs=quoteRunContext.timings.totalAiMs;
     aggregatedResult.notes.push(
-      `本次 AI 耗时：产品识别 ${extractChatId==="local" ? "本地跳过" : formatDurationMs(quoteRunContext.timings.extractMs)}，单产品分析 ${productAnalyzeResult.used ? formatDurationMs(quoteRunContext.timings.productAnalyzeMs) : "未配置"}，选参 ${formatDurationMs(quoteRunContext.timings.selectMs)}，AI 合计 ${formatDurationMs(quoteRunContext.timings.totalAiMs)}；选参并发 ${Math.max(selectTasks.length || 1,1)}。`
+      `本次 AI 耗时：产品识别 ${extractChatId==="local" ? "本地跳过" : formatDurationMs(quoteRunContext.timings.extractMs)}，单产品分析 ${productAnalyzeResult.used ? formatDurationMs(quoteRunContext.timings.productAnalyzeMs) : "未配置"}，选参 ${formatDurationMs(quoteRunContext.timings.selectMs)}，AI 合计 ${formatDurationMs(quoteRunContext.timings.totalAiMs)}；选参任务 ${selectTasks.length} 个。`
     );
     console.info("quote parse run finished",{
       fileName:file && file.name,
@@ -4303,8 +5025,20 @@ async function parseQuoteFile(file,anchor=null){
       products:aggregatedResult.products,
       notes:[...new Set(aggregatedResult.notes.filter(Boolean))]
     }));
+    quoteAnalyticsContext.paramCount=parsed.products.reduce((sum,product)=>sum+(Array.isArray(product && product.selected_params) ? product.selected_params.length : 0),0);
     updateAiTaskProgress(3);
-    await applyQuoteParseResultData(parsed,anchor);
+    const applied=await applyQuoteParseResultData(parsed,anchor);
+    if(applied){
+      sendAnalyticsEvent({
+        type:"generate_params",
+        status:"success",
+        durationMs:performance.now()-quoteAnalyticsStartedAt,
+        productCount:quoteAnalyticsContext.productCount,
+        paramCount:quoteAnalyticsContext.paramCount,
+        targetParamCount:quoteAnalyticsContext.selectTaskCount,
+        aiDurationMs:quoteAnalyticsContext.aiDurationMs
+      });
+    }
   }catch(err){
     console.error(err);
     const message=getQuoteParseErrorMessage(err);
@@ -4312,6 +5046,17 @@ async function parseQuoteFile(file,anchor=null){
       setQuoteUploadState("识别失败，请检查文件类型后重试。");
     }
     showToast(message,"error",anchor);
+    if(quoteAnalyticsStartedAt){
+      sendAnalyticsEvent({
+        type:"generate_params",
+        status:"failure",
+        durationMs:performance.now()-quoteAnalyticsStartedAt,
+        productCount:quoteAnalyticsContext.productCount,
+        paramCount:quoteAnalyticsContext.paramCount,
+        targetParamCount:quoteAnalyticsContext.selectTaskCount,
+        errorCode:getErrorInfo(err).code || "GENERATE_FAILED"
+      });
+    }
   }finally{
     hideLoading();
   }
@@ -4337,6 +5082,11 @@ function getErrorInfo(error){
       // ignore parse error and use raw message
     }
   }
+  info.message=getReadableAiClientErrorMessage(info.message,info.status);
+  if(!info.code && (info.status===502 || info.status===503 || info.status===504)){
+    info.code="AI_UPSTREAM_TIMEOUT";
+    info.reasonType=info.reasonType || "timeout";
+  }
   return info;
 }
 
@@ -4344,7 +5094,7 @@ function getQuoteParseErrorMessage(error){
   const info=getErrorInfo(error);
   const message=info.message;
   if(info.code==="AI_DNS_FAILED") return "AI 域名解析失败，请确认 Windows 已登录公司零信任或内网 DNS 可用。";
-  if(info.code==="AI_UPSTREAM_TIMEOUT") return "AI 接口请求超时，请检查零信任网络或稍后重试。";
+  if(info.code==="AI_UPSTREAM_TIMEOUT") return message || "AI 接口等待时间较长仍未返回，FastGPT 供应商可能仍在后台生成，请稍后重试。";
   if(info.code==="AI_AUTH_FAILED") return "AI 接口鉴权失败，请检查 API Key 或权限。";
   if(info.reasonType==="config") return message || "AI 后端配置不完整，请检查配置文件。";
   if(message.startsWith("{")){
@@ -4359,7 +5109,7 @@ function getQuoteParseErrorMessage(error){
   }
   if(message.startsWith("QUOTE_UNSUPPORTED")) return "当前报价单格式暂不支持，请优先使用 Excel、CSV 或文本文件。";
   if(message.startsWith("QUOTE_EMPTY")) return "报价单内容为空，暂时无法解析。";
-  if(message.startsWith("AI_SELECT_INVALID_STRUCTURE")) return "参数选择流返回结构不正确，请检查 selected_params / database_param_id / final_content 字段。";
+  if(message.startsWith("AI_SELECT_INVALID_STRUCTURE")) return "参数选择流返回结构不正确，请检查 selected_params 输出结构。";
   if(message.startsWith("FILE_READ")) return "报价单文件读取失败，请重新选择文件。";
   if(message.startsWith("AI_JSON_NOT_FOUND")) return "AI 返回结果里没有找到可用的 JSON。";
   if(message.startsWith("AI_EMPTY")) return "AI 没有返回有效内容。";
@@ -4375,7 +5125,7 @@ function getAiErrorMessage(error){
   const info=getErrorInfo(error);
   const message=info.message;
   if(info.code==="AI_DNS_FAILED") return "AI 域名解析失败，请确认 Windows 已登录公司零信任或内网 DNS 可用。";
-  if(info.code==="AI_UPSTREAM_TIMEOUT") return "AI 接口请求超时，请检查零信任网络或稍后重试。";
+  if(info.code==="AI_UPSTREAM_TIMEOUT") return message || "AI 接口等待时间较长仍未返回，FastGPT 供应商可能仍在后台生成，请稍后重试。";
   if(info.code==="AI_AUTH_FAILED") return "AI 接口鉴权失败，请检查 API Key 或权限。";
   if(info.code==="AI_RATE_LIMITED") return "AI 接口限流，请稍后重试。";
   if(info.reasonType==="network") return message || "AI 网络连接失败，请检查内网连接。";
@@ -4450,6 +5200,28 @@ function matchProductForParsedItem(item){
     }
   });
   return bestScore>=30 ? bestProduct : null;
+}
+
+function matchProductForParsedSelection(item){
+  const specs=Array.isArray(item && item.selected_params) ? item.selected_params : [];
+  const counts=new Map();
+  specs.forEach(spec=>{
+    const rawParamId=spec && (
+      spec.database_param_id ??
+      spec.param_id ??
+      spec.id
+    );
+    const numericParamId=Number(rawParamId);
+    if(!Number.isFinite(numericParamId)) return;
+    const matchedParam=state.parameters.find(param=>Number(param.id)===numericParamId);
+    if(!matchedParam || matchedParam.product_id===undefined || matchedParam.product_id===null) return;
+    const productId=matchedParam.product_id;
+    counts.set(productId,(counts.get(productId) || 0)+1);
+  });
+  const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+  if(!ranked.length) return null;
+  const productId=ranked[0][0];
+  return state.products.find(product=>String(product.id)===String(productId)) || null;
 }
 
 function matchParameterForParsedItem(productId,paramSpec){
@@ -4829,6 +5601,12 @@ function extractStandardPorts(quoteItem){
     const around=text.slice(Math.max(0,match.index-12),match.index+match[0].length+12);
     if(/光纤线|多模|单模|模块|光模块|双纤|线缆|硬盘|数据盘|系统盘|缓存盘|SATA|SSD/.test(around)) continue;
     addPort(normalizePortTerm(match[2]),match[1]);
+  }
+  const compactPortMatch=getQuoteSourceText(quoteItem,["hardware","evidence"]).match(/(\d+)\s*电\s*(\d+)\s*光\s*(\d+)\s*万兆光/);
+  if(compactPortMatch){
+    addPort("千兆电口",compactPortMatch[1]);
+    addPort("千兆光口",compactPortMatch[2]);
+    addPort("万兆光口",compactPortMatch[3]);
   }
   const order=["百兆电口","千兆电口","千兆光口","万兆光口","25G光口","40G光口","100G光口"];
   return order
@@ -5229,6 +6007,9 @@ function buildAppliedSelection(product,paramSpecs,instanceName="",quoteItem=null
   if(filteredTitles.length){
     notes.push(`【${toText(instanceName || quoteSource && quoteSource.quote_product_name || product && product.name).trim() || "未命名产品"}】已过滤参数库基础/硬件规格参数：${[...new Set(filteredTitles)].join("、")}`);
   }
+  if(missingTitles.length){
+    notes.push(`【${toText(instanceName || quoteSource && quoteSource.quote_product_name || product && product.name).trim() || "未命名产品"}】有 ${missingTitles.length} 条 AI 返回参数未在当前参数库产品中匹配：${[...new Set(missingTitles)].slice(0,12).join("、")}`);
+  }
 
 	  const productAnalysis=quoteSource && quoteSource.product_analysis && typeof quoteSource.product_analysis==="object"
 	    ? quoteSource.product_analysis
@@ -5241,7 +6022,7 @@ function buildAppliedSelection(product,paramSpecs,instanceName="",quoteItem=null
 	    notes.push(`【${toText(instanceName || quoteSource && quoteSource.quote_product_name || product && product.name).trim() || "未命名产品"}】第一阶段产品分析提示：${baseParamIssues.join("、")}`);
 	  }
 	  if(!firstHardwareParam){
-	    notes.push(`【${toText(instanceName || quoteSource && quoteSource.quote_product_name || product && product.name).trim() || "未命名产品"}】第一阶段 quote_product_analyze 未生成基础参数，已禁止第二阶段或本地兜底补写`);
+	    notes.push(`【${toText(instanceName || quoteSource && quoteSource.quote_product_name || product && product.name).trim() || "未命名产品"}】第一阶段未生成可用基础参数`);
 	  }
   if(firstHardwareParam){
     const sanitizedFirstHardwareParam=sanitizeGeneratedBaseParam(firstHardwareParam,quoteSource);
@@ -5268,8 +6049,123 @@ function buildAppliedSelection(product,paramSpecs,instanceName="",quoteItem=null
   };
 }
 
+function isInformationalQuoteNote(note){
+  const text=toText(note).trim();
+  if(!text) return true;
+  if(text.startsWith("本次 AI 耗时")) return true;
+  if(text==="本地已完成报价单类型识别和产品行归一化。") return true;
+  if(/^依据模块覆盖和策略要求/.test(text)) return true;
+  if(/已使用本地报价单事实生成|已用本地事实兜底/.test(text)) return true;
+  if(/已过滤参数库|AI 返回参数未在当前参数库产品中匹配|参数库条目含占位符|参数选择失败/.test(text)) return true;
+  if(/产品分析需确认/.test(text) && /基础参数为空|AI 第一条基础参数不可用/.test(text)) return true;
+  const firstStageMatch=text.match(/^第一阶段基础参数生成：(\d+)\/(\d+) 个产品已生成。$/);
+  if(firstStageMatch && firstStageMatch[1]===firstStageMatch[2]) return true;
+  return false;
+}
+
+function isBlockingQuoteIssueNote(note){
+  const text=toText(note).trim();
+  if(!text || isInformationalQuoteNote(text)) return false;
+  if(/未匹配参数库产品|没有匹配到参数库|未找到匹配的参数库产品/.test(text)) return true;
+  if(/未生成第一条基础参数|第一阶段未生成可用基础参数|未生成可用基础参数/.test(text)) return true;
+  if(/无法应用|无法解析|结构不正确|未识别到有效报价产品/.test(text)) return true;
+  return false;
+}
+
+function buildQuoteApplyIssueSummary(matchedProducts,unmatchedProducts,notes){
+  const issues=[];
+  dedupeExactTextArray(unmatchedProducts).forEach(name=>{
+    issues.push(`未匹配参数库产品：${name}`);
+  });
+  dedupeExactTextArray(notes)
+    .filter(isBlockingQuoteIssueNote)
+    .forEach(note=>issues.push(note));
+  const visibleIssues=dedupeExactTextArray(issues);
+  return {
+    appliedCount:Array.isArray(matchedProducts) ? matchedProducts.length : 0,
+    issueCount:visibleIssues.length,
+    issues:visibleIssues.slice(0,80),
+    hiddenCount:Math.max(0,visibleIssues.length-80)
+  };
+}
+
+function openQuoteApplyIssueModal(summary){
+  if(!summary || !summary.issueCount) return;
+  const existing=document.getElementById("quoteApplyIssueModal");
+  if(existing) existing.remove();
+  const modal=document.createElement("div");
+  modal.id="quoteApplyIssueModal";
+  modal.className="ai-modal open";
+  const panel=document.createElement("div");
+  panel.className="ai-modal-panel";
+  panel.style.width="min(720px,calc(100vw - 32px))";
+  const head=document.createElement("div");
+  head.className="ai-modal-head";
+  const titleWrap=document.createElement("div");
+  const title=document.createElement("div");
+  title.className="ai-modal-title";
+  title.textContent="生成结果检查";
+  const subtitle=document.createElement("div");
+  subtitle.className="ai-modal-subtitle";
+  subtitle.textContent=`已应用 ${summary.appliedCount} 个产品，仍有 ${summary.issueCount} 个阻断问题需要处理。`;
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(subtitle);
+  const closeBtn=document.createElement("button");
+  closeBtn.type="button";
+  closeBtn.className="ai-close";
+  closeBtn.title="关闭";
+  closeBtn.setAttribute("aria-label","关闭");
+  closeBtn.textContent="×";
+  head.appendChild(titleWrap);
+  head.appendChild(closeBtn);
+
+  const list=document.createElement("div");
+  list.className="ai-card";
+  list.style.maxHeight="min(52vh,420px)";
+  list.style.overflow="auto";
+  list.style.display="flex";
+  list.style.flexDirection="column";
+  list.style.gap="8px";
+  summary.issues.forEach((issue,index)=>{
+    const item=document.createElement("div");
+    item.style.fontSize="13px";
+    item.style.lineHeight="1.6";
+    item.style.color="var(--text-primary)";
+    item.textContent=`${index+1}. ${issue}`;
+    list.appendChild(item);
+  });
+  if(summary.hiddenCount>0){
+    const more=document.createElement("div");
+    more.style.fontSize="12px";
+    more.style.color="var(--text-muted)";
+    more.textContent=`还有 ${summary.hiddenCount} 条提示已省略，请查看浏览器控制台完整日志。`;
+    list.appendChild(more);
+  }
+
+  const actions=document.createElement("div");
+  actions.className="ai-actions";
+  actions.style.marginTop="16px";
+  const okBtn=document.createElement("button");
+  okBtn.type="button";
+  okBtn.className="btn-ai-primary";
+  okBtn.textContent="知道了";
+  actions.appendChild(okBtn);
+
+  const close=()=>modal.remove();
+  closeBtn.addEventListener("click",close);
+  okBtn.addEventListener("click",close);
+  modal.addEventListener("pointerdown",event=>{
+    if(event.target===modal) close();
+  });
+  panel.appendChild(head);
+  panel.appendChild(list);
+  panel.appendChild(actions);
+  modal.appendChild(panel);
+  document.body.appendChild(modal);
+}
+
 async function applyQuoteParseResultData(parsedResult,anchor=null){
-  parsedResult=normalizeQuoteParseResult(parsedResult);
+  parsedResult=validateQuoteParseResultStructure(normalizeQuoteParseResult(parsedResult));
 
   if(parsedResult.products.length===0){
     showToast("解析结果里没有可应用的产品","error",anchor);
@@ -5286,7 +6182,7 @@ async function applyQuoteParseResultData(parsedResult,anchor=null){
   const unmatchedProducts=[];
 
   parsedResult.products.forEach(item=>{
-    const matchedProduct=matchProductForParsedItem(item);
+    const matchedProduct=matchProductForParsedSelection(item) || matchProductForParsedItem(item);
     if(!matchedProduct){
       unmatchedProducts.push(toText(item.database_product_hint || item.quote_product_name).trim() || "未命名产品");
       return;
@@ -5325,13 +6221,21 @@ async function applyQuoteParseResultData(parsedResult,anchor=null){
     activateInstance(state.activeInstanceId);
   }
 
+  const issueSummary=buildQuoteApplyIssueSummary(matchedProducts,unmatchedProducts,parsedResult.notes);
   if(unmatchedProducts.length || parsedResult.notes.length){
     console.warn("报价单应用提示",{
       unmatchedProducts,
       notes:parsedResult.notes
     });
   }
-  showToast(`已应用 ${matchedProducts.length} 个产品`, "success", anchor);
+  showToast(
+    issueSummary.issueCount
+      ? `已应用 ${matchedProducts.length} 个产品，仍有 ${issueSummary.issueCount} 个阻断问题`
+      : `已应用 ${matchedProducts.length} 个产品`,
+    "success",
+    anchor
+  );
+  openQuoteApplyIssueModal(issueSummary);
   if(isMobileViewport()){
     setMobileTab("edit");
   }
@@ -6092,10 +6996,73 @@ function isBasicParameterProject(param){
   return normalizeMatchText(param && param.module)==="基础参数";
 }
 
+function getParamSearchHaystack(param){
+  return [
+    param && param.title,
+    param && param.content,
+    param && param.module,
+    param && param.function_item,
+    param && param.requires_module,
+    param && param.remark,
+    param && param.is_star,
+    param && param.type
+  ].map(value=>normalizeMatchText(value)).join(" ");
+}
+
+function getFilteredCurrentParams(){
+  const query=normalizeMatchText(state.paramSearchQuery);
+  if(!query) return state.currentParams;
+  const keywords=query.split(/\s+/).filter(Boolean);
+  return state.currentParams.filter(param=>{
+    const haystack=getParamSearchHaystack(param);
+    return keywords.every(keyword=>haystack.includes(keyword));
+  });
+}
+
+function handleParamSearchInput(value){
+  state.paramSearchQuery=toText(value).trim();
+  const clearBtn=document.getElementById("paramSearchClear");
+  if(clearBtn) clearBtn.hidden=!state.paramSearchQuery;
+  renderParamList();
+}
+
+function clearParamSearch(){
+  state.paramSearchQuery="";
+  const input=document.getElementById("paramSearchInput");
+  const clearBtn=document.getElementById("paramSearchClear");
+  if(input) input.value="";
+  if(clearBtn) clearBtn.hidden=true;
+  renderParamList();
+}
+
+function clearParamSearchControlsOnly(){
+  state.paramSearchQuery="";
+  const input=document.getElementById("paramSearchInput");
+  const clearBtn=document.getElementById("paramSearchClear");
+  if(input) input.value="";
+  if(clearBtn) clearBtn.hidden=true;
+}
+
+function getParamMobileAccentState(param){
+  if(getTypeCategory(param && (param.is_star || param.type))==="control") return "control";
+  const proofStates=[
+    normalizeProofMark(param && param.image_proof).status,
+    normalizeProofMark(param && param.qualification_proof).status
+  ].filter(Boolean);
+  const supportStates=getVendorSupportEntries(param).map(([,value])=>getSupportStatusClass(value));
+  const states=[...proofStates,...supportStates];
+  if(states.includes("fail")) return "fail";
+  if(states.includes("partial")) return "partial";
+  if(states.includes("unknown") || states.length===0) return "missing";
+  if(states.includes("ok")) return "ok";
+  return "missing";
+}
+
 function createParamItem(param,isSelected){
   const card=document.createElement("div");
   card.className="param-item"+(isSelected ? " selected" : "");
   card.dataset.paramId=String(param.id);
+  card.dataset.mobileAccent=getParamMobileAccentState(param);
   const isBasicProject=isBasicParameterProject(param);
   if(isBasicProject){
     card.classList.add("basic-project-param");
@@ -6221,7 +7188,7 @@ function setParamGroupCollapsed(key,collapsed){
 
 function buildParamModuleMap(){
   const moduleMap=new Map();
-  state.currentParams.forEach(param=>{
+  getFilteredCurrentParams().forEach(param=>{
     const moduleName=toText(param.module).trim() || "未分项目";
     const functionName=toText(param.function_item).trim() || "未分功能项";
     if(!moduleMap.has(moduleName)){
@@ -6248,6 +7215,9 @@ function estimateParamVirtualRowHeight(row){
 
 function buildParamVirtualRows(){
   const rows=[];
+  if(state.paramVirtualNodeCache && typeof state.paramVirtualNodeCache.clear==="function"){
+    state.paramVirtualNodeCache.clear();
+  }
   const moduleMap=buildParamModuleMap();
   moduleMap.forEach((functionMap,moduleName)=>{
     const moduleCount=[...functionMap.values()].reduce((sum,items)=>sum+items.length,0);
@@ -6274,7 +7244,36 @@ function buildParamVirtualRows(){
   });
   state.paramVirtualRows=rows;
   state.paramVirtualTotalHeight=offset;
+  state.paramVirtualRangeKey="";
   return rows;
+}
+
+function findParamVirtualStartIndex(rows,viewportTop){
+  let low=0;
+  let high=rows.length;
+  while(low<high){
+    const mid=(low+high)>>1;
+    if(rows[mid].offset+rows[mid].estimatedHeight<viewportTop){
+      low=mid+1;
+    }else{
+      high=mid;
+    }
+  }
+  return low;
+}
+
+function findParamVirtualEndIndex(rows,viewportBottom){
+  let low=0;
+  let high=rows.length;
+  while(low<high){
+    const mid=(low+high)>>1;
+    if(rows[mid].offset<viewportBottom){
+      low=mid+1;
+    }else{
+      high=mid;
+    }
+  }
+  return low;
 }
 
 function ensureParamVirtualScrollBound(list){
@@ -6315,20 +7314,61 @@ function createParamVirtualGroupRow(row){
   return group;
 }
 
+function getParamItemRenderSignature(param){
+  const displayContent=Object.prototype.hasOwnProperty.call(state.editedContentByParamId,param.id)
+    ? state.editedContentByParamId[param.id]
+    : param.content;
+  return [
+    param.id,
+    param.title,
+    param.is_star || param.type,
+    displayContent,
+    param.image_proof,
+    param.qualification_proof
+  ].map(item=>toText(item)).join("\u001f");
+}
+
+function setParamItemSelectionState(item,isSelected){
+  if(!item) return;
+  item.classList.toggle("selected",isSelected);
+  const checkbox=item.querySelector("input[type='checkbox']");
+  if(checkbox) checkbox.checked=isSelected;
+}
+
+function getParamVirtualItem(row,isSelected){
+  const param=row.param;
+  const cache=state.paramVirtualNodeCache;
+  const cacheKey=String(param.id);
+  const signature=getParamItemRenderSignature(param);
+  let item=cache && cache.get(cacheKey);
+  if(!item || item.dataset.renderSignature!==signature){
+    item=createParamItem(param,isSelected);
+    item.dataset.renderSignature=signature;
+    if(cache) cache.set(cacheKey,item);
+  }
+  item.classList.add("param-virtual-row");
+  setParamItemSelectionState(item,isSelected);
+  return item;
+}
+
 function renderParamVirtualWindow(){
   const list=document.getElementById("paramList");
   if(!list) return;
   const rows=state.paramVirtualRows || [];
+  if(!rows.length && normalizeMatchText(state.paramSearchQuery)){
+    const rangeKey="empty-search:"+state.paramSearchQuery;
+    if(rangeKey===state.paramVirtualRangeKey) return;
+    const empty=document.createElement("div");
+    empty.className="empty-hint param-empty-search";
+    empty.textContent="暂无匹配参数";
+    list.replaceChildren(empty);
+    state.paramVirtualRangeKey=rangeKey;
+    return;
+  }
   const viewportTop=Math.max(0,list.scrollTop-PARAM_VIRTUAL_OVERSCAN);
   const viewportBottom=list.scrollTop+list.clientHeight+PARAM_VIRTUAL_OVERSCAN;
-  let startIndex=0;
-  while(startIndex<rows.length && rows[startIndex].offset+rows[startIndex].estimatedHeight<viewportTop){
-    startIndex++;
-  }
-  let endIndex=startIndex;
-  while(endIndex<rows.length && rows[endIndex].offset<viewportBottom){
-    endIndex++;
-  }
+  const startIndex=findParamVirtualStartIndex(rows,viewportTop);
+  const endIndex=findParamVirtualEndIndex(rows,viewportBottom);
   const selectedIds=new Set(state.selected.map(item=>item.id));
   const topHeight=startIndex<rows.length ? rows[startIndex].offset : 0;
   const renderedRows=rows.slice(startIndex,endIndex);
@@ -6336,6 +7376,9 @@ function renderParamVirtualWindow(){
     ? renderedRows[renderedRows.length-1].offset+renderedRows[renderedRows.length-1].estimatedHeight
     : topHeight;
   const bottomHeight=Math.max(0,(state.paramVirtualTotalHeight || 0)-bottomStart);
+  const rangeKey=[startIndex,endIndex,topHeight,bottomHeight].join(":");
+  if(rangeKey===state.paramVirtualRangeKey) return;
+  const desiredScrollTop=list.scrollTop;
   const fragment=document.createDocumentFragment();
   const topSpacer=document.createElement("div");
   topSpacer.className="param-virtual-spacer";
@@ -6343,9 +7386,7 @@ function renderParamVirtualWindow(){
   fragment.appendChild(topSpacer);
   renderedRows.forEach(row=>{
     if(row.type==="param"){
-      const item=createParamItem(row.param,selectedIds.has(row.param.id));
-      item.classList.add("param-virtual-row");
-      fragment.appendChild(item);
+      fragment.appendChild(getParamVirtualItem(row,selectedIds.has(row.param.id)));
     }else{
       fragment.appendChild(createParamVirtualGroupRow(row));
     }
@@ -6354,36 +7395,149 @@ function renderParamVirtualWindow(){
   bottomSpacer.className="param-virtual-spacer";
   bottomSpacer.style.height=`${bottomHeight}px`;
   fragment.appendChild(bottomSpacer);
-  list.innerHTML="";
-  list.appendChild(fragment);
+  list.replaceChildren(fragment);
+  state.paramVirtualRangeKey=rangeKey;
+  if(Math.abs(list.scrollTop-desiredScrollTop)>1){
+    const maxScrollTop=Math.max(0,list.scrollHeight-list.clientHeight);
+    list.scrollTop=Math.min(desiredScrollTop,maxScrollTop);
+  }
 }
 
 function renderParamList(){
   const list=document.getElementById("paramList");
   const stats=getCurrentProductStats();
-  document.getElementById("paramCount").innerText=stats.totalCount+" 个";
+  const filteredCount=getFilteredCurrentParams().length;
+  const hasSearch=Boolean(normalizeMatchText(state.paramSearchQuery));
+  document.getElementById("paramCount").innerText=hasSearch ? `${filteredCount}/${stats.totalCount} 个` : stats.totalCount+" 个";
   const scrollTop=list.scrollTop;
   buildParamVirtualRows();
   ensureParamVirtualScrollBound(list);
-  list.scrollTop=scrollTop;
+  list.scrollTop=hasSearch ? 0 : scrollTop;
   renderParamVirtualWindow();
+}
+
+function getCurrentCatalogParamById(paramId){
+  const targetId=String(paramId);
+  return state.currentParams.find(item=>String(item.id)===targetId) || null;
+}
+
+function expandParamGroupsForParam(param){
+  const moduleName=toText(param.module).trim() || "未分项目";
+  const functionName=toText(param.function_item).trim() || "未分功能项";
+  const moduleKey=getParamGroupKey("module",moduleName);
+  const functionKey=getParamGroupKey("function",moduleName,functionName);
+  let changed=false;
+  if(isParamGroupCollapsed(moduleKey)){
+    setParamGroupCollapsed(moduleKey,false);
+    changed=true;
+  }
+  if(isParamGroupCollapsed(functionKey)){
+    setParamGroupCollapsed(functionKey,false);
+    changed=true;
+  }
+  return changed;
+}
+
+function findParamVirtualRowByParamId(paramId){
+  const targetId=String(paramId);
+  return (state.paramVirtualRows || []).find(row=>row.type==="param" && String(row.param && row.param.id)===targetId) || null;
+}
+
+function highlightLocatedParam(paramId){
+  const list=document.getElementById("paramList");
+  if(!list) return;
+  list.querySelectorAll(".param-locate-highlight").forEach(item=>item.classList.remove("param-locate-highlight"));
+  if(state.paramLocateHighlightTimer){
+    clearTimeout(state.paramLocateHighlightTimer);
+    state.paramLocateHighlightTimer=null;
+  }
+  const item=list.querySelector(`.param-item[data-param-id="${paramId}"]`);
+  if(!item) return;
+  item.setAttribute("tabindex","-1");
+  item.classList.add("param-locate-highlight");
+  item.focus({preventScroll:true});
+  state.paramLocateHighlightTimer=setTimeout(()=>{
+    item.classList.remove("param-locate-highlight");
+    state.paramLocateHighlightTimer=null;
+  },1800);
+}
+
+function getParamLocateTopPadding(){
+  return isMobileViewport() ? PARAM_LOCATE_TOP_PADDING_MOBILE : PARAM_LOCATE_TOP_PADDING_DESKTOP;
+}
+
+function keepLocatedParamClearOfTop(paramId){
+  const list=document.getElementById("paramList");
+  if(!list) return;
+  const item=list.querySelector(`.param-item[data-param-id="${paramId}"]`);
+  if(!item) return;
+  const safeTop=getParamLocateTopPadding();
+  const listRect=list.getBoundingClientRect();
+  const itemRect=item.getBoundingClientRect();
+  const itemTop=itemRect.top-listRect.top;
+  if(itemTop<safeTop){
+    list.scrollTop=Math.max(0,list.scrollTop-(safeTop-itemTop));
+    renderParamVirtualWindow();
+  }
+}
+
+function scrollParamLibraryToParam(param,anchorEl){
+  const list=document.getElementById("paramList");
+  if(!list) return;
+  const catalogParam=getCurrentCatalogParamById(param && param.id);
+  if(!catalogParam){
+    showToast("该参数不是来自左侧参数库，无法定位。","info",anchorEl);
+    return;
+  }
+  if(normalizeMatchText(state.paramSearchQuery) && !getFilteredCurrentParams().some(item=>String(item.id)===String(catalogParam.id))){
+    clearParamSearchControlsOnly();
+  }
+  const groupsChanged=expandParamGroupsForParam(catalogParam);
+  if(groupsChanged || !(state.paramVirtualRows && state.paramVirtualRows.length)){
+    renderParamList();
+  }
+  let row=findParamVirtualRowByParamId(catalogParam.id);
+  if(!row){
+    buildParamVirtualRows();
+    row=findParamVirtualRowByParamId(catalogParam.id);
+  }
+  if(!row){
+    showToast("未在当前参数库分类中找到该参数。","info",anchorEl);
+    return;
+  }
+  const targetTop=Math.max(0,row.offset-getParamLocateTopPadding());
+  list.scrollTop=targetTop;
+  renderParamVirtualWindow();
+  requestAnimationFrame(()=>{
+    keepLocatedParamClearOfTop(catalogParam.id);
+    requestAnimationFrame(()=>highlightLocatedParam(catalogParam.id));
+  });
+}
+
+function locateSelectedParamInLibrary(param,anchorEl){
+  if(!param || param.isCustom){
+    showToast("自定义参数没有左侧参数库来源，无法定位。","info",anchorEl);
+    return;
+  }
+  if(isMobileViewport() && state.mobileTab!=="select" && typeof setMobileTab==="function"){
+    setMobileTab("select");
+    requestAnimationFrame(()=>scrollParamLibraryToParam(param,anchorEl));
+    return;
+  }
+  scrollParamLibraryToParam(param,anchorEl);
 }
 
 function updateParamItemSelection(paramId,isSelected){
   const item=document.querySelector(`.param-item[data-param-id="${paramId}"]`);
   if(!item) return;
-  item.classList.toggle("selected",isSelected);
-  const checkbox=item.querySelector("input[type='checkbox']");
-  if(checkbox) checkbox.checked=isSelected;
+  setParamItemSelectionState(item,isSelected);
 }
 
 function syncParamSelectionStates(){
   const selectedIds=new Set(state.selected.map(item=>String(item.id)));
   document.querySelectorAll("#paramList .param-item").forEach(item=>{
     const checked=selectedIds.has(item.dataset.paramId);
-    item.classList.toggle("selected",checked);
-    const checkbox=item.querySelector("input[type='checkbox']");
-    if(checkbox) checkbox.checked=checked;
+    setParamItemSelectionState(item,checked);
   });
 }
 
@@ -6422,10 +7576,12 @@ function renderEditArea(){
   const area=document.getElementById("editArea");
   area.innerHTML="";
   document.getElementById("selectedCount").innerText=state.selected.length+" 条";
+  pruneBatchSelection();
   renderInstancePanel();
   updateMobileContext();
 
   if(state.selected.length===0){
+    updateBatchToolbarState();
     const empty=document.createElement("div");
     empty.className="empty-hint";
     empty.textContent="暂未选择参数";
@@ -6448,9 +7604,15 @@ function renderEditArea(){
 
     const left=document.createElement("div");
     left.className="edit-toolbar-left";
-    const title=document.createElement("span");
-    title.className="edit-toolbar-title";
+    const title=document.createElement("button");
+    title.type="button";
+    title.className="edit-toolbar-title edit-locate-btn";
     title.textContent=`参数 ${index+1}`;
+    title.title=param.isCustom ? "自定义参数没有左侧参数库来源" : "定位到左侧参数库";
+    title.disabled=Boolean(param.isCustom);
+    if(!param.isCustom){
+      title.addEventListener("click",event=>locateSelectedParamInLibrary(param,event.currentTarget));
+    }
     const typeBadge=document.createElement("span");
     typeBadge.className="edit-type-badge";
     if(typeCategory){
@@ -6473,6 +7635,19 @@ function renderEditArea(){
       button.addEventListener("click",()=>setParamPrefixSymbol(index,option.value));
       prefixToggle.appendChild(button);
     });
+    const batchCheck=document.createElement("button");
+    batchCheck.type="button";
+    batchCheck.className="edit-batch-pick"+(state.batchSelectedParamIds instanceof Set && state.batchSelectedParamIds.has(String(param.id)) ? " active" : "");
+    batchCheck.title="勾选";
+    batchCheck.setAttribute("aria-label",`勾选参数 ${index+1}`);
+    batchCheck.setAttribute("aria-pressed",state.batchSelectedParamIds instanceof Set && state.batchSelectedParamIds.has(String(param.id)) ? "true" : "false");
+    batchCheck.addEventListener("click",event=>{
+      const next=!batchCheck.classList.contains("active");
+      batchCheck.classList.toggle("active",next);
+      batchCheck.setAttribute("aria-pressed",next ? "true" : "false");
+      toggleBatchParamSelection(param.id,next);
+    });
+    toolbar.appendChild(batchCheck);
     left.appendChild(title);
     left.appendChild(typeBadge);
     left.appendChild(prefixToggle);
@@ -6571,6 +7746,7 @@ function renderEditArea(){
 
   area.appendChild(fragment);
   area.querySelectorAll(".edit-card textarea").forEach(autoResizeEditTextarea);
+  updateBatchToolbarState();
 }
 
 function editContent(index,value){
@@ -6590,8 +7766,20 @@ function isMeaningfulMetaText(value){
 
 function autoResizeEditTextarea(textarea){
   if(!textarea) return;
-  textarea.style.height="0px";
-  textarea.style.height=`${Math.max(38,textarea.scrollHeight)}px`;
+  if(!(state.pendingTextareaResizes instanceof Set)){
+    state.pendingTextareaResizes=new Set();
+  }
+  state.pendingTextareaResizes.add(textarea);
+  if(state.textareaResizeFrame) return;
+  state.textareaResizeFrame=requestAnimationFrame(()=>{
+    state.textareaResizeFrame=null;
+    const pending=[...state.pendingTextareaResizes].filter(node=>node && node.isConnected);
+    state.pendingTextareaResizes.clear();
+    pending.forEach(node=>{
+      node.style.height="0px";
+      node.style.height=`${Math.max(38,node.scrollHeight)}px`;
+    });
+  });
 }
 
 function setParamPrefixSymbol(index,symbol){
@@ -7085,6 +8273,33 @@ function getUsageClientId(){
     return clientId;
   }catch(err){
     return createUsageId("client");
+  }
+}
+
+function getAnalyticsDeviceType(){
+  if(isMobileViewport()) return "mobile";
+  if(/ipad|tablet/i.test(navigator.userAgent || "")) return "tablet";
+  return "desktop";
+}
+
+function sendAnalyticsEvent(payload){
+  try{
+    const body=JSON.stringify({
+      clientId:getUsageClientId(),
+      sessionId:USAGE_SESSION_ID,
+      deviceType:getAnalyticsDeviceType(),
+      ...payload,
+      durationMs:Math.max(0,Math.round(Number(payload && payload.durationMs) || 0))
+    });
+    fetch("/api/analytics/event",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      cache:"no-store",
+      keepalive:true,
+      body
+    }).catch(()=>{});
+  }catch(err){
+    // Statistics must never block the user's workflow.
   }
 }
 
