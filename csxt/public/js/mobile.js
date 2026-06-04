@@ -359,7 +359,7 @@ function renderMobileSourceScreen(){
           </span>
         </button>
         <article class="ui-card ui-notice mpw-home-card muted notice">
-          <i aria-hidden="true">!</i><span>通知</span>
+          <i aria-hidden="true"></i><span>通知</span>
           <strong>当前为华北区专属测试版本</strong>
           <em>功能仍在测试阶段，如发现问题请及时反馈</em>
         </article>
