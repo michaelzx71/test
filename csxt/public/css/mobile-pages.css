@@ -210,26 +210,28 @@
 
   body.is-mobile #mobileWorkbench .mpw-home-card.notice > i{
     grid-area:icon;
-    position:static;
-    inset:auto;
-    transform:none;
+    position:static !important;
+    inset:auto !important;
+    transform:none !important;
     width:54px;
     height:54px;
+    min-width:54px;
     border-radius:18px;
-    display:grid;
+    display:grid !important;
     place-items:center;
-    color:#fff;
-    background:linear-gradient(180deg,#ffc85f,#f29b12);
+    color:#fff !important;
+    background:linear-gradient(180deg,#ffc85f,#f29b12) !important;
     box-shadow:0 8px 18px rgba(242,155,18,0.2);
-    font-size:0;
+    font-size:0 !important;
     font-style:normal;
   }
 
   body.is-mobile #mobileWorkbench .mpw-home-card.notice > i::before{
-    content:"!";
-    font-size:24px;
-    font-weight:950;
-    line-height:1;
+    content:"!" !important;
+    font-size:24px !important;
+    font-weight:950 !important;
+    line-height:1 !important;
+    color:#fff !important;
   }
 
   body.is-mobile #mobileWorkbench .mpw-home-card.notice span{
