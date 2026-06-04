@@ -87,6 +87,16 @@ http://127.0.0.1:7654/superzxy
 
 热升级不负责安装新 npm 依赖。如果代码新增依赖，需要先做一次全量离线部署，把 `package-lock.json` 和 `node_modules` 在服务器上准备好，再继续使用后台升级。
 
+## 移动端 UI 维护
+
+主系统仍为原生 HTML/CSS/JS，不使用 Vue、React、Angular、Svelte 或构建工具。移动端样式已按 `@layer` 建立结构化底座，后续修改请先阅读：
+
+- `docs/UI_SPEC.md`
+- `docs/CODEX_RULES.md`
+- `docs/MOBILE_REFACTOR_REPORT.md`
+
+新增移动端卡片、按钮、标签和页面布局时，应使用 `ui-card`、`ui-button`、`ui-badge`、`ui-tag`、`page-container`、`page-section` 等统一结构，不要继续在 CSS 末尾追加无归属补丁。
+
 ## 服务器部署注意
 
 反馈建议不是纯前端功能，页面会请求后端接口：

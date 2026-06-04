@@ -1,0 +1,306 @@
+/* Mobile layout shell for AI 参数系统.
+   This file intentionally loads after app.css and owns only body.is-mobile UI. */
+@media (max-width:768px){
+  body.is-mobile{
+    --m-page:#eef4fb;
+    --m-surface:#ffffff;
+    --m-surface-soft:#f7fbff;
+    --m-line:#cdddf2;
+    --m-line-strong:#b6cbe8;
+    --m-text:#07111f;
+    --m-muted:#425a78;
+    --m-faint:#6b7f9b;
+    --m-primary:#1267f6;
+    --m-primary-strong:#0d55d4;
+    --m-primary-soft:#e8f2ff;
+    --m-success:#18b66b;
+    --m-success-soft:#e9faef;
+    --m-danger:#dc4545;
+    --m-danger-soft:#fff0f0;
+    --m-warning:#c47c18;
+    --m-warning-soft:#fff6df;
+    --m-radius:16px;
+    --m-radius-sm:12px;
+    --m-gap:12px;
+    --m-gap-lg:16px;
+    --m-pad:16px;
+    --m-header-h:48px;
+    --m-bottom-button-h:52px;
+    --m-shadow:0 10px 26px rgba(35,76,132,0.1);
+    --m-shadow-soft:0 5px 16px rgba(35,76,132,0.08);
+    width:100%;
+    min-width:0;
+    min-height:100dvh;
+    overflow:hidden;
+    background:var(--m-page);
+    color:var(--m-text);
+    -webkit-text-size-adjust:100%;
+  }
+
+  body.is-mobile *,
+  body.is-mobile *::before,
+  body.is-mobile *::after{
+    box-sizing:border-box;
+  }
+
+  body.is-mobile button,
+  body.is-mobile input,
+  body.is-mobile textarea,
+  body.is-mobile select{
+    font:inherit;
+  }
+
+  body.is-mobile button{
+    border:0;
+    touch-action:manipulation;
+  }
+
+  body.is-mobile .app-shell{
+    width:100vw;
+    height:100dvh;
+    min-width:0;
+    overflow:hidden;
+    background:var(--m-page);
+    transform:none;
+  }
+
+  body.is-mobile .header{
+    position:fixed;
+    inset:0 0 auto;
+    z-index:50;
+    height:calc(var(--m-header-h) + env(safe-area-inset-top,0px));
+    min-height:calc(var(--m-header-h) + env(safe-area-inset-top,0px));
+    padding:env(safe-area-inset-top,0px) var(--m-pad) 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    border-bottom:1px solid var(--m-line);
+    background:rgba(248,251,255,0.94);
+    box-shadow:0 1px 0 rgba(255,255,255,0.72);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+  }
+
+  body.is-mobile .header-main{
+    flex:1 1 auto;
+    min-width:0;
+    height:var(--m-header-h);
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+
+  body.is-mobile .header-title{
+    min-width:0;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--m-text);
+    font-size:16px;
+    font-weight:900;
+    line-height:1;
+    letter-spacing:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  body.is-mobile .header-title::after{
+    content:"";
+    flex:0 0 7px;
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:var(--m-success);
+    box-shadow:0 0 0 3px rgba(24,182,107,0.12);
+  }
+
+  body.is-mobile .header-actions{
+    flex:0 0 auto;
+    height:var(--m-header-h);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+
+  body.is-mobile .header-main .btn-feedback,
+  body.is-mobile .header-actions > button:not(.mobile-more-btn){
+    display:none;
+  }
+
+  body.is-mobile .mobile-more-btn{
+    width:38px;
+    height:38px;
+    min-width:38px;
+    min-height:38px;
+    border:1px solid var(--m-line);
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    color:var(--m-text);
+    background:var(--m-surface);
+    box-shadow:var(--m-shadow-soft);
+    font-size:20px;
+    line-height:1;
+  }
+
+  body.is-mobile .mobile-menu{
+    position:fixed;
+    top:calc(var(--m-header-h) + env(safe-area-inset-top,0px) + 8px);
+    right:var(--m-pad);
+    z-index:70;
+    width:min(220px,calc(100vw - 32px));
+    max-width:calc(100vw - 32px);
+    border:1px solid var(--m-line);
+    border-radius:var(--m-radius);
+    padding:8px;
+    background:var(--m-surface);
+    box-shadow:0 18px 40px rgba(19,52,99,0.18);
+  }
+
+  body.is-mobile .mobile-menu button{
+    width:100%;
+    min-height:44px;
+    border-radius:12px;
+    padding:0 12px;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
+    color:var(--m-text);
+    background:transparent;
+    font-size:14px;
+    font-weight:800;
+  }
+
+  body.is-mobile .main,
+  body.is-mobile .main.page-container{
+    position:fixed;
+    inset:calc(var(--m-header-h) + env(safe-area-inset-top,0px)) 0 0;
+    width:auto;
+    height:auto;
+    min-width:0;
+    min-height:0;
+    padding:8px var(--m-pad);
+    display:block;
+    overflow:hidden;
+    background:var(--m-page);
+  }
+
+  body.is-mobile .sidebar,
+  body.is-mobile .content{
+    display:none;
+  }
+
+  body.is-mobile #mobileWorkbench{
+    width:100%;
+    height:100%;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    overflow:hidden;
+    background:var(--m-page);
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-screen,
+  body.is-mobile #mobileWorkbench .mobile-page{
+    width:100%;
+    height:100%;
+    min-width:0;
+    min-height:0;
+    padding:8px 0 calc(10px + env(safe-area-inset-bottom,0px));
+    display:flex;
+    flex-direction:column;
+    gap:var(--m-gap);
+    overflow:hidden;
+    background:var(--m-page);
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-scroll,
+  body.is-mobile #mobileWorkbench .mpw-product-list,
+  body.is-mobile #mobileWorkbench .mpw-cart-list,
+  body.is-mobile #mobileWorkbench .mpw-work-scroll,
+  body.is-mobile #mobileWorkbench .mpw-home-actions{
+    min-height:0;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-scroll::-webkit-scrollbar,
+  body.is-mobile #mobileWorkbench .mpw-product-list::-webkit-scrollbar,
+  body.is-mobile #mobileWorkbench .mpw-cart-list::-webkit-scrollbar,
+  body.is-mobile #mobileWorkbench .mpw-work-scroll::-webkit-scrollbar,
+  body.is-mobile #mobileWorkbench .mpw-home-actions::-webkit-scrollbar{
+    display:none;
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-bottom-bar{
+    position:relative;
+    inset:auto;
+    left:auto;
+    right:auto;
+    bottom:auto;
+    z-index:auto;
+    flex:0 0 auto;
+    width:100%;
+    min-width:0;
+    padding:10px;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    border:1px solid var(--m-line);
+    border-radius:18px;
+    display:grid;
+    grid-template-columns:minmax(0,0.78fr) minmax(0,1fr) minmax(0,1.14fr);
+    gap:10px;
+    align-items:center;
+    background:rgba(255,255,255,0.96);
+    box-shadow:0 12px 30px rgba(30,70,125,0.13);
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-bottom-bar > div{
+    min-width:0;
+    color:var(--m-muted);
+    font-size:12px;
+    font-weight:850;
+    line-height:1.25;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-format-bottom{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-format-bottom > div{
+    display:none;
+  }
+
+  body.is-mobile[data-theme="dark"]{
+    --m-page:#0d1624;
+    --m-surface:#172235;
+    --m-surface-soft:#111e31;
+    --m-line:#2d4668;
+    --m-line-strong:#42628d;
+    --m-text:#f3f7ff;
+    --m-muted:#b9c8de;
+    --m-faint:#91a4bf;
+    --m-primary:#6ca6ff;
+    --m-primary-strong:#3f83ea;
+    --m-primary-soft:#17345b;
+    --m-success:#53de91;
+    --m-success-soft:#143724;
+    --m-danger:#ff8585;
+    --m-danger-soft:#351b1d;
+    --m-warning:#ffc85f;
+    --m-warning-soft:#342816;
+    background:var(--m-page);
+  }
+
+  body.is-mobile[data-theme="dark"] .header,
+  body.is-mobile[data-theme="dark"] .mobile-menu,
+  body.is-mobile[data-theme="dark"] #mobileWorkbench .mpw-bottom-bar{
+    background:rgba(23,34,53,0.96);
+  }
+}

@@ -2,12 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>AI参数系统</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
-<link rel="stylesheet" href="css/app.css?v=mobile-opt-20260601">
+<link rel="stylesheet" href="css/app.css?v=mobile-home-fix-20260604a">
+<link rel="stylesheet" href="css/mobile-layout.css?v=mobile-rebuild-20260604a">
+<link rel="stylesheet" href="css/mobile-components.css?v=mobile-rebuild-20260604a">
+<link rel="stylesheet" href="css/mobile-pages.css?v=mobile-rebuild-20260604a">
 </head>
 <body>
 
@@ -15,17 +18,17 @@
 <header class="header">
   <div class="header-main">
     <div class="header-title">AI 参数系统</div>
-    <button type="button" class="btn-feedback" onclick="openFeedbackModal(event)" title="反馈建议">反馈建议</button>
+    <button type="button" class="ui-button ui-button--secondary btn-feedback" onclick="openFeedbackModal(event)" title="反馈建议">反馈建议</button>
   </div>
   <div class="header-actions">
-    <button id="quoteParserBtn" class="btn-quote" onclick="triggerQuoteFileSelection(event)" title="AI 解析报价单并自动填充">AI 解析报价单</button>
-    <button id="themeToggleBtn" class="btn-theme" onclick="toggleTheme(event)" title="切换夜间模式" aria-pressed="false">夜间模式</button>
-    <button class="btn-export" onclick="exportDraftJson(event)">导出草稿</button>
-    <button class="btn-export" onclick="triggerDraftImport(event)">导入草稿</button>
-    <button class="btn-clear" onclick="clearAll(event)">清空草稿</button>
-    <button class="btn-export" onclick="exportWord(event)">导出 Word</button>
-    <button class="btn-copy" onclick="copyText(event)">复制参数</button>
-    <button type="button" class="mobile-more-btn" id="mobileMoreBtn" onclick="toggleMobileMoreMenu(event)" title="更多操作" aria-label="更多操作" aria-expanded="false">⋯</button>
+    <button id="quoteParserBtn" class="ui-button ui-button--primary btn-quote" onclick="triggerQuoteFileSelection(event)" title="AI 解析报价单并自动填充">AI 解析报价单</button>
+    <button id="themeToggleBtn" class="ui-button ui-button--secondary btn-theme" onclick="toggleTheme(event)" title="切换夜间模式" aria-pressed="false">夜间模式</button>
+    <button class="ui-button ui-button--secondary btn-export" onclick="exportDraftJson(event)">导出草稿</button>
+    <button class="ui-button ui-button--secondary btn-export" onclick="triggerDraftImport(event)">导入草稿</button>
+    <button class="ui-button ui-button--danger btn-clear" onclick="clearAll(event)">清空草稿</button>
+    <button class="ui-button ui-button--secondary btn-export" onclick="exportWord(event)">导出 Word</button>
+    <button class="ui-button ui-button--primary btn-copy" onclick="copyText(event)">复制参数</button>
+    <button type="button" class="ui-button ui-button--ghost mobile-more-btn" id="mobileMoreBtn" onclick="toggleMobileMoreMenu(event)" title="更多操作" aria-label="更多操作" aria-expanded="false">⋯</button>
   </div>
   <div class="mobile-menu" id="mobileMoreMenu" aria-label="更多操作">
     <button type="button" onclick="openFeedbackModal(event); closeMobileMoreMenu();">反馈建议</button>
@@ -36,26 +39,9 @@
   </div>
 </header>
 
-<main class="main">
-<div class="mobile-work-context" aria-label="手机端当前产品">
-  <button type="button" class="mobile-current-product" onclick="openMobileProductDrawer(event)" aria-label="切换当前产品" aria-haspopup="dialog">
-    <span class="mobile-product-kicker">当前产品</span>
-    <strong id="mobileContextProductName">未选择产品</strong>
-    <em id="mobileContextInstanceName">请选择产品</em>
-  </button>
-  <div class="mobile-context-actions">
-    <button type="button" class="mobile-context-btn" onclick="addInstanceFromCurrentProduct(event)" aria-label="新增产品实例">新增</button>
-    <button type="button" class="mobile-context-btn primary" onclick="openMobileProductDrawer(event)" aria-label="打开产品库">产品库</button>
-  </div>
-</div>
+<main class="main page-container">
+<section class="mobile-workbench page-section" id="mobileWorkbench" aria-label="手机端参数工作台"></section>
 <aside class="sidebar" aria-label="产品导航">
-  <div class="mobile-product-drawer-head">
-    <div>
-      <strong>产品库</strong>
-      <span>选择后继续选参</span>
-    </div>
-    <button type="button" onclick="closeMobileProductDrawer(event)" aria-label="关闭产品选择">×</button>
-  </div>
   <div id="sidebar" class="sidebar-products" tabindex="0" aria-label="产品分类和版本列表"></div>
   <div id="instanceDock" class="instance-dock" style="display:none;">
     <div id="instanceDockResize" class="instance-dock-resize" title="拖动调整多产品清单高度" aria-label="拖动调整多产品清单高度"></div>
@@ -69,13 +55,13 @@
   </div>
 </aside>
 
-<section class="content" aria-label="参数工作区">
+<section class="content page-section" aria-label="参数工作区">
 
   <!-- 默认指南 -->
   <div id="guideState" class="guide">
     <div class="guide-box">
       <div class="guide-top-grid" aria-label="系统状态和通知">
-        <section class="guide-status-panel" aria-label="状态显示">
+        <section class="ui-card guide-status-panel" aria-label="状态显示">
           <div class="guide-panel-label">状态显示</div>
           <div class="guide-status-row">
             <div class="guide-kicker" id="guideKicker">参数库加载中</div>
@@ -83,13 +69,13 @@
           </div>
           <div class="guide-status-meta" id="guideCatalogMeta">正在加载参数库...</div>
         </section>
-        <section class="guide-notice-panel empty" id="guideNotice" aria-label="通知框">
+        <section class="ui-card guide-notice-panel empty" id="guideNotice" aria-label="通知框">
           <div class="guide-panel-label">通知框</div>
           <div class="guide-notice-title" id="guideNoticeTitle">暂无通知</div>
           <div class="guide-notice-message" id="guideNoticeMessage">后台暂未发布通知。</div>
         </section>
       </div>
-      <div class="guide-hero">
+      <div class="ui-card guide-hero">
         <div class="guide-main-copy">
           <h2 class="guide-title" id="guideTitle">从报价单到招标参数，一步成稿</h2>
           <div class="guide-subtitle" id="guideSubtitle">
@@ -135,7 +121,7 @@
 
   <!-- 左列 -->
   <div class="left-panel" id="leftPanel" style="display:none;">
-    <div class="section section-select">
+    <section class="page-section section section-select">
       <div class="param-select-head">
         <h4>
           参数选择
@@ -159,38 +145,32 @@
         </div>
       </div>
       <div id="paramList" tabindex="0" aria-label="参数选择列表"></div>
-      <div class="mobile-select-cta is-empty" aria-label="已选参数快捷操作" hidden>
-        <button type="button" onclick="setMobileTab('edit')" disabled aria-disabled="true">
-          <span id="mobileSelectCtaText">已选 0 条</span>
-          <strong>去编辑</strong>
-        </button>
-      </div>
-    </div>
+    </section>
   </div>
 
   <!-- 右列 -->
   <div class="right-panel" id="rightPanel" style="display:none;" tabindex="0" aria-label="已选参数和预览">
 
-    <div class="section section-edit">
+    <section class="page-section section section-edit">
       <h4>
         <span class="edit-head-title">已选参数</span>
         <span class="edit-head-right">
-          <button type="button" class="btn-batch btn-batch-select" data-batch-select-all onclick="toggleBatchSelectAllFromButton(this)">全选</button>
-          <button type="button" class="btn-batch btn-batch-cancel" data-batch-clear onclick="clearBatchSelection()">取消</button>
-          <button type="button" class="btn-batch btn-batch-danger" data-batch-action="delete" onclick="confirmBatchRemoveSelected(event.currentTarget)">删除</button>
-          <button type="button" class="btn-batch btn-batch-ai" data-batch-action="rewrite" onclick="openBatchRewriteModal(event.currentTarget,'regular')">改写</button>
-          <button type="button" class="btn-add-custom" onclick="addCustomParam(event)">新增空白</button>
-          <span class="count-badge" id="selectedCount">0 条</span>
+          <button type="button" class="ui-button ui-button--secondary btn-batch btn-batch-select" data-batch-select-all onclick="toggleBatchSelectAllFromButton(this)">全选</button>
+          <button type="button" class="ui-button ui-button--ghost btn-batch btn-batch-cancel" data-batch-clear onclick="clearBatchSelection()">取消</button>
+          <button type="button" class="ui-button ui-button--danger btn-batch btn-batch-danger" data-batch-action="delete" onclick="confirmBatchRemoveSelected(event.currentTarget)">删除</button>
+          <button type="button" class="ui-button ui-button--primary btn-batch btn-batch-ai" data-batch-action="rewrite" onclick="openBatchRewriteModal(event.currentTarget,'regular')">改写</button>
+          <button type="button" class="ui-button ui-button--secondary btn-add-custom" onclick="addCustomParam(event)">新增空白</button>
+          <span class="ui-badge count-badge" id="selectedCount">0 条</span>
         </span>
       </h4>
       <div id="editArea"></div>
-    </div>
+    </section>
 
-    <div class="section section-preview">
+    <section class="page-section section section-preview">
       <h4>
         参数预览
         <span class="preview-head-stats">
-          <button type="button" class="btn-format" onclick="openFormatOptionsModal()">AI整理格式</button>
+          <button type="button" class="ui-button ui-button--secondary btn-format" onclick="openFormatOptionsModal()">AI整理格式</button>
           <span class="stat-total">参数总数：<strong id="previewTotalCount">0</strong></span>
           <span class="stat-control">控标项：<strong id="previewControlCount">0</strong></span>
         </span>
@@ -219,27 +199,18 @@
           </div>
         </div>
       </div>
-      <div class="mobile-preview-actions" aria-label="预览交付操作">
-        <button type="button" class="btn-export" onclick="exportWord(event)">导出Word</button>
-        <button type="button" class="btn-copy" onclick="copyText(event)">复制参数</button>
-      </div>
-    </div>
+    </section>
 
   </div>
 
 </section>
 </main>
-<nav class="mobile-bottom-nav" aria-label="手机版工作区">
-  <button type="button" class="mobile-tab-btn" data-mobile-tab-target="select" aria-current="false">选参</button>
-  <button type="button" class="mobile-tab-btn" data-mobile-tab-target="edit" aria-current="false">编辑</button>
-  <button type="button" class="mobile-tab-btn" data-mobile-tab-target="preview" aria-current="false">预览</button>
-</nav>
 </div>
 
 <script src="js/ai-client.js?v=quote-fix-20260521b"></script>
-<script src="js/mobile.js?v=mobile-opt-20260601"></script>
+<script src="js/mobile.js?v=mobile-structured-20260604a"></script>
 <script src="js/quote-parser.js?v=quote-fix-20260521b"></script>
-<script src="js/app.js?v=mobile-opt-20260601"></script>
+<script src="js/app.js?v=mobile-structured-20260604a"></script>
 
 </body>
 </html>

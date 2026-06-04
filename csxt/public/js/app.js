@@ -32,8 +32,17 @@ const state={
   draftSavePaused:false,
   draftSaveTimer:null,
   lastDraftSavedAt:"",
-  mobileTab:"select",
+  mobileTab:"home",
+  mobileScreen:"source",
+  mobileWorkMode:"select",
+  mobileManualSelectedProductIds:[],
+  mobileProductCategory:"",
+  mobileParamSearchQuery:"",
+  mobileCompletedInstanceIds:[],
+  mobileScrollPositions:{},
   mobileSelectScrollByProduct:{},
+  mobileProductSearchQuery:"",
+  mobileRecentProductIds:[],
   paramGroupCollapsed:{},
   paramSearchQuery:"",
   paramVirtualRows:[],
@@ -182,10 +191,6 @@ function handleGlobalHotkeys(event){
   if(event.key==="Escape"){
     if(document.body.classList.contains("mobile-menu-open")){
       closeMobileMoreMenu();
-      return;
-    }
-    if(document.body.classList.contains("mobile-product-drawer-open")){
-      closeMobileProductDrawer();
       return;
     }
     if(state.feedbackModal){
@@ -626,8 +631,7 @@ function applyDraftPayload(payload,{silent=false,saveAfterApply=true}={}){
     showGuidePanel();
     updateMobileContext();
     if(isMobileViewport()){
-      setMobileTab("select");
-      openMobileProductDrawer(null,{silent:true});
+      setMobileTab("home",true);
     }
   }
 
@@ -932,6 +936,19 @@ function confirmAtAnchor(message,anchorEl){
 
     document.body.appendChild(panel);
 
+    if(isMobileViewport()){
+      panel.classList.add("mobile-confirm-pop");
+      panel.style.left="50%";
+      panel.style.top="50%";
+      panel.classList.remove("above");
+      setTimeout(()=>{
+        document.addEventListener("pointerdown",onOutsidePointerDown,true);
+        document.addEventListener("keydown",onEsc,true);
+        okBtn.focus();
+      },0);
+      return;
+    }
+
     const pos=getToastPosition(anchorEl);
     const panelRect=panel.getBoundingClientRect();
     const halfWidth=panelRect.width/2;
@@ -1120,7 +1137,7 @@ function openRewritePreviewModal(index,mode,requirement,resultText){
             <textarea class="ai-textarea rewrite-preview-textarea" id="rewriteResult"></textarea>
           </div>
         </div>
-        <div class="ai-actions" style="margin-top:14px;">
+        <div class="ai-actions ai-actions--spaced">
           <button type="button" class="btn-ai-primary" id="rewriteApplyBtn">替换原内容</button>
           <button type="button" class="btn-ai-secondary" id="rewriteRetryBtn">重新生成</button>
           <button type="button" class="btn-ai-secondary" id="rewriteCloseBtn">取消</button>
@@ -1258,7 +1275,7 @@ function openFormatOptionsModal(){
             <textarea class="ai-textarea" id="formatSpecialRequirement" placeholder="例如：删除检测报告查询提醒；保留所有型号和数量；不要调整技术表达"></textarea>
           </div>
         </div>
-        <div class="ai-actions" style="margin-top:14px;">
+        <div class="ai-actions ai-actions--spaced">
           <button type="button" class="btn-ai-primary" id="formatGenerateBtn">生成整理预览</button>
           <button type="button" class="btn-ai-secondary" id="formatCancelBtn">取消</button>
           <span class="ai-inline-hint">生成后会先预览，确认后再批量替换。</span>
@@ -1349,8 +1366,7 @@ function openFormatPreviewModal(items){
         list.appendChild(block);
       });
       const actions=document.createElement("div");
-      actions.className="ai-actions";
-      actions.style.marginTop="14px";
+      actions.className="ai-actions ai-actions--spaced";
       actions.innerHTML=`
         <button type="button" class="btn-ai-primary" id="formatApplyBtn">批量替换</button>
         <button type="button" class="btn-ai-secondary" id="formatCloseBtn">取消</button>
@@ -1409,7 +1425,7 @@ function openFeedbackModal(event=null){
         <textarea id="feedbackSuggestion" class="ai-textarea" name="suggestion" placeholder="请描述你遇到的问题或优化建议"></textarea>
       </div>
       <div class="feedback-status" id="feedbackStatus"></div>
-      <div class="ai-actions" style="margin-top:14px;">
+      <div class="ai-actions ai-actions--spaced">
         <button type="submit" class="btn-ai-primary" id="feedbackSubmitBtn">提交反馈</button>
         <button type="button" class="btn-ai-secondary" id="feedbackCancelBtn">取消</button>
       </div>
@@ -1561,7 +1577,7 @@ function openQuoteUploadModal(anchor=null){
 	        </div>
 	      </div>
       <div class="quote-upload-status" id="quoteUploadStatus">选择文件后会自动进入产品匹配。</div>
-      <div class="ai-actions" style="margin-top:14px;">
+      <div class="ai-actions ai-actions--spaced">
         <button type="button" class="btn-ai-primary" id="quoteUploadChooseBtn">选择文件</button>
         <button type="button" class="btn-ai-secondary" id="quoteUploadCancelBtn">取消</button>
       </div>
@@ -1647,7 +1663,7 @@ function openQuoteGenerationStrategyModal(extractResult,initialStrategy=null){
           </div>
         </div>
       </div>
-      <div class="ai-actions" style="margin-top:14px;">
+      <div class="ai-actions ai-actions--spaced">
         <button type="button" class="btn-ai-primary" id="quoteStrategyConfirmBtn">确认并生成参数</button>
         <button type="button" class="btn-ai-secondary" id="quoteStrategyBackBtn">上一步</button>
         <button type="button" class="btn-ai-secondary" id="quoteStrategyCancelBtn">取消</button>
@@ -1690,7 +1706,7 @@ function openQuoteExtractConfirmModal(extractResult,lineItems){
     modal.className="ai-modal open";
     modal._resolver=resolve;
     const panel=document.createElement("div");
-    panel.className="ai-modal-panel";
+    panel.className="ai-modal-panel quote-confirm-panel";
     panel.innerHTML=`
       <div class="ai-modal-head">
         <div>
@@ -1700,7 +1716,7 @@ function openQuoteExtractConfirmModal(extractResult,lineItems){
         <button type="button" class="ai-close" title="关闭" aria-label="关闭">×</button>
       </div>
       <div class="quote-confirm-list"></div>
-      <div class="ai-actions" style="margin-top:14px;">
+      <div class="ai-actions ai-actions--spaced">
         <button type="button" class="btn-ai-primary" id="quoteExtractConfirmBtn">确认并进入 AI 生成</button>
         <button type="button" class="btn-ai-secondary" id="quoteExtractCancelBtn">取消</button>
       </div>
@@ -6143,8 +6159,7 @@ function openQuoteApplyIssueModal(summary){
   }
 
   const actions=document.createElement("div");
-  actions.className="ai-actions";
-  actions.style.marginTop="16px";
+  actions.className="ai-actions ai-actions--spaced";
   const okBtn=document.createElement("button");
   okBtn.type="button";
   okBtn.className="btn-ai-primary";
@@ -6237,7 +6252,8 @@ async function applyQuoteParseResultData(parsedResult,anchor=null){
   );
   openQuoteApplyIssueModal(issueSummary);
   if(isMobileViewport()){
-    setMobileTab("edit");
+    setMobileTab("select");
+    if(typeof updateMobileHome==="function") updateMobileHome();
   }
   return true;
 }
@@ -6262,6 +6278,7 @@ function activateInstance(instanceId,activeElement){
   renderEditArea();
   schedulePreviewUpdate();
   updateMobileContext();
+  if(typeof updateMobileHome==="function") updateMobileHome();
 }
 
 function ensureDefaultInstanceForProduct(productId){
@@ -6298,6 +6315,7 @@ function openProductWithoutInstance(productId,activeElement){
   renderEditArea();
   schedulePreviewUpdate();
   updateMobileContext();
+  if(typeof updateMobileHome==="function") updateMobileHome();
 }
 
 function ensureActiveInstanceForCurrentProduct(){
@@ -6444,6 +6462,7 @@ function addInstanceFromCurrentProduct(event){
   showToast(`已新增产品：${instance.name}`,"success",anchor);
   if(isMobileViewport()){
     setMobileTab("edit");
+    if(typeof updateMobileHome==="function") updateMobileHome();
   }
 }
 
@@ -6574,7 +6593,7 @@ async function removeInstance(instanceId,anchorEl=null){
   showGuidePanel();
   updateMobileContext();
   if(isMobileViewport()){
-    openMobileProductDrawer(null,{silent:true});
+    setMobileTab("home",true);
   }
   showToast("产品已删除","success",anchorEl);
 }
@@ -6748,6 +6767,12 @@ function applyDatabaseCatalog(payload){
   }));
   buildSidebar();
   showGuidePanel();
+  if(typeof updateMobileMode==="function"){
+    updateMobileMode();
+  }
+  if(typeof updateMobileHome==="function"){
+    updateMobileHome();
+  }
   renderEditArea();
   schedulePreviewUpdate();
 
@@ -6835,6 +6860,9 @@ function buildSidebar(){
 }
 
 function loadProduct(productId,activeElement){
+  if(isMobileViewport() && typeof rememberMobileRecentProduct==="function"){
+    rememberMobileRecentProduct(productId);
+  }
   const existingInstances=getInstancesByProduct(productId);
   if(existingInstances.length>0){
     const rememberedInstance=getRememberedInstance(productId);
@@ -8235,8 +8263,7 @@ async function clearAll(event){
   showGuidePanel();
   updateMobileContext();
   if(isMobileViewport()){
-    setMobileTab("select");
-    openMobileProductDrawer(null,{silent:true});
+    setMobileTab("home",true);
   }
   showToast("✨ 已清空参数与多产品清单","success",anchor);
 }
