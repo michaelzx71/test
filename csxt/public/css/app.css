@@ -721,18 +721,19 @@
   }
 
   body.is-mobile .mpw-home-card.notice > i::before{
-    left:23px;
-    right:23px;
-    bottom:17px;
+    left:50%;
+    bottom:16px;
+    width:24px;
     height:30px;
     border-radius:999px 999px 9px 9px;
     background:#f19b12;
     box-shadow:-10px 11px 0 -4px #ffd666,10px 11px 0 -4px #ffd666;
+    transform:translateX(-50%);
   }
 
   body.is-mobile .mpw-home-card.notice > i::after{
     left:50%;
-    top:15px;
+    top:14px;
     width:6px;
     height:6px;
     border-radius:50%;
