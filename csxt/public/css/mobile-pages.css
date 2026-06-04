@@ -786,6 +786,7 @@
   body.is-mobile #mobileWorkbench .mpw-preview-card pre{
     flex:1 1 auto;
     min-height:180px;
+    max-height:40vh;
     margin:0;
     border:1px solid var(--m-line);
     border-radius:13px;
@@ -798,6 +799,7 @@
     overflow-wrap:anywhere;
     word-break:break-word;
     overflow:auto;
+    -webkit-overflow-scrolling:touch;
   }
 
   body.is-mobile[data-theme="dark"] #mobileWorkbench .mpw-mode-tabs,
