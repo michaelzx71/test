@@ -55,6 +55,11 @@
     touch-action:manipulation;
   }
 
+  body.is-mobile button:focus-visible{
+    outline:2px solid var(--m-primary);
+    outline-offset:2px;
+  }
+
   body.is-mobile .app-shell{
     width:100vw;
     height:100dvh;
@@ -143,6 +148,11 @@
     box-shadow:var(--m-shadow-soft);
     font-size:20px;
     line-height:1;
+  }
+
+  body.is-mobile .mobile-more-btn:focus-visible{
+    outline:2px solid var(--m-primary);
+    outline-offset:2px;
   }
 
   body.is-mobile .mobile-menu{

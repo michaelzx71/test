@@ -573,6 +573,13 @@
     transform:scale(0.99);
   }
 
+  @media (prefers-reduced-motion: reduce){
+    body.is-mobile #mobileWorkbench .mpw-sort-item.dragging{
+      opacity:0.6;
+      transform:none;
+    }
+  }
+
   body.is-mobile #mobileWorkbench .mpw-rewrite-actions{
     flex:0 0 auto;
     display:grid;
