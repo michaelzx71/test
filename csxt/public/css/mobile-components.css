@@ -42,6 +42,12 @@
     box-shadow:0 8px 18px rgba(18,103,246,0.22);
   }
 
+  body.is-mobile #mobileWorkbench .ui-button:focus-visible,
+  body.is-mobile #mobileWorkbench .mpw-action-btn:focus-visible{
+    outline:2px solid var(--m-primary);
+    outline-offset:2px;
+  }
+
   body.is-mobile #mobileWorkbench .ui-button--secondary,
   body.is-mobile #mobileWorkbench .ui-button.secondary{
     border-color:#a9c6ef;
@@ -107,6 +113,11 @@
     background:transparent;
     font-size:15px;
     font-weight:700;
+  }
+
+  body.is-mobile #mobileWorkbench .mpw-search input:focus-visible{
+    outline:2px solid var(--m-primary);
+    outline-offset:2px;
   }
 
   body.is-mobile #mobileWorkbench .mpw-search input::placeholder{

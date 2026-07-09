@@ -359,7 +359,7 @@ function renderMobileSourceScreen(){
           </span>
         </button>
         <article class="ui-card ui-notice mpw-home-card muted notice">
-          <i aria-hidden="true">!</i><span>通知</span>
+          <i aria-hidden="true"></i><span>通知</span>
           <strong>当前为华北区专属测试版本</strong>
           <em>功能仍在测试阶段，如发现问题请及时反馈</em>
         </article>
@@ -382,7 +382,7 @@ function renderMobileManualScreen(){
     <section class="mpw-screen mobile-page page-container mpw-manual">
       <div class="mpw-search">
         <span>⌕</span>
-        <input type="search" value="${escapeHtml(state.mobileProductSearchQuery)}" placeholder="搜索产品名称 / 产品线 / 版本" data-mobile-input="product-search" autocomplete="off">
+        <input type="search" value="${escapeHtml(state.mobileProductSearchQuery)}" placeholder="搜索产品名称 / 产品线 / 版本" data-mobile-input="product-search" autocomplete="off" aria-label="搜索产品">
         ${state.mobileProductSearchQuery ? '<button type="button" data-mobile-action="clear-product-search" aria-label="清空">×</button>' : ""}
       </div>
       <div class="mpw-chip-row">
@@ -492,7 +492,7 @@ function renderMobileParamSelect(instance){
   return `
     <div class="mpw-search">
       <span>⌕</span>
-      <input type="search" value="${escapeHtml(state.mobileParamSearchQuery)}" placeholder="搜索参数、模块、备注" data-mobile-input="param-search" autocomplete="off">
+      <input type="search" value="${escapeHtml(state.mobileParamSearchQuery)}" placeholder="搜索参数、模块、备注" data-mobile-input="param-search" autocomplete="off" aria-label="搜索参数">
       ${state.mobileParamSearchQuery ? '<button type="button" data-mobile-action="clear-param-search" aria-label="清空">×</button>' : ""}
     </div>
     <div class="mpw-work-scroll mpw-scroll" data-mobile-scroll-key="work-select-${escapeHtml(instance.id)}">

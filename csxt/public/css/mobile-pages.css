@@ -198,56 +198,19 @@
     font-weight:800;
   }
 
-  body.is-mobile #mobileWorkbench .mpw-home-card.notice{
-    min-height:142px;
-    padding:18px;
-    display:grid;
-    grid-template-columns:54px minmax(0,1fr);
-    grid-template-areas:"icon label" "icon title" "icon desc";
-    gap:6px 12px;
-    align-content:center;
-  }
-
-  body.is-mobile #mobileWorkbench .mpw-home-card.notice > i{
-    grid-area:icon;
-    position:static;
-    inset:auto;
-    transform:none;
-    width:54px;
-    height:54px;
-    border-radius:18px;
-    display:grid;
-    place-items:center;
-    color:#fff;
-    background:linear-gradient(180deg,#ffc85f,#f29b12);
-    box-shadow:0 8px 18px rgba(242,155,18,0.2);
-    font-size:0;
-    font-style:normal;
-  }
-
-  body.is-mobile #mobileWorkbench .mpw-home-card.notice > i::before{
-    content:"!";
-    font-size:24px;
-    font-weight:950;
-    line-height:1;
-  }
-
   body.is-mobile #mobileWorkbench .mpw-home-card.notice span{
-    grid-area:label;
     color:var(--m-muted);
     font-size:13px;
     font-weight:900;
   }
 
   body.is-mobile #mobileWorkbench .mpw-home-card.notice strong{
-    grid-area:title;
     font-size:17px;
     line-height:1.35;
     white-space:normal;
   }
 
   body.is-mobile #mobileWorkbench .mpw-home-card.notice em{
-    grid-area:desc;
     color:var(--m-muted);
     font-size:14px;
     font-weight:700;
@@ -573,6 +536,13 @@
     transform:scale(0.99);
   }
 
+  @media (prefers-reduced-motion: reduce){
+    body.is-mobile #mobileWorkbench .mpw-sort-item.dragging{
+      opacity:0.6;
+      transform:none;
+    }
+  }
+
   body.is-mobile #mobileWorkbench .mpw-rewrite-actions{
     flex:0 0 auto;
     display:grid;
@@ -779,6 +749,7 @@
   body.is-mobile #mobileWorkbench .mpw-preview-card pre{
     flex:1 1 auto;
     min-height:180px;
+    max-height:40vh;
     margin:0;
     border:1px solid var(--m-line);
     border-radius:13px;
@@ -791,6 +762,7 @@
     overflow-wrap:anywhere;
     word-break:break-word;
     overflow:auto;
+    -webkit-overflow-scrolling:touch;
   }
 
   body.is-mobile[data-theme="dark"] #mobileWorkbench .mpw-mode-tabs,
